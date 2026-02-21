@@ -1,3 +1,15 @@
+export interface EventBinding {
+  eventType: string;
+  category: "api_call" | "navigation" | "dom_mutation" | "form_submit" | "unknown";
+  source?: {
+    scriptUrl: string;
+    lineNumber: number;
+    columnNumber: number;
+    functionName: string;
+  };
+  estimatedEffect?: string;
+}
+
 export interface BehaviorNode {
   id: string;
   role: string;
@@ -7,6 +19,7 @@ export interface BehaviorNode {
   value: string;
   backendDOMNodeId: number;
   children: string[];
+  events: EventBinding[];
 }
 
 export interface BehaviorGraph {

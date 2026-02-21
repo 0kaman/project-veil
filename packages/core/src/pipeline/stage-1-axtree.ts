@@ -181,6 +181,7 @@ export function buildGraphFromAXTree(
       value: node.value?.value ?? "",
       backendDOMNodeId: node.backendDOMNodeId ?? 0,
       children,
+      events: [],
     };
 
     behaviorNodes.set(nodeId, bNode);

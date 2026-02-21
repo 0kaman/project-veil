@@ -1,9 +1,10 @@
-export type { BehaviorNode, BehaviorGraph } from "./graph/model.js";
+export type { BehaviorNode, BehaviorGraph, EventBinding } from "./graph/model.js";
 export { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
 import { buildGraphFromAXTree } from "./pipeline/stage-1-axtree.js";
+import { enrichGraphWithEvents } from "./pipeline/stage-2-events.js";
 import type { BehaviorGraph } from "./graph/model.js";
 import { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 
@@ -21,7 +22,9 @@ export class VeilPage {
       this.page.getAXTree(),
       this.page.getTitle(),
     ]);
-    return buildGraphFromAXTree(axNodes, this.url, title);
+    const graph = buildGraphFromAXTree(axNodes, this.url, title);
+    await enrichGraphWithEvents(graph, this.page.cdp);
+    return graph;
   }
 
   async toCompactText(): Promise<string> {

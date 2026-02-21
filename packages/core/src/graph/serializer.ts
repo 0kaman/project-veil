@@ -54,6 +54,15 @@ export function serializeCompactText(graph: BehaviorGraph): string {
       lines.push(`${indent}  value: "${node.value}"`);
     }
 
+    for (const event of node.events) {
+      const effect = event.estimatedEffect
+        ? ` (${event.estimatedEffect})`
+        : "";
+      lines.push(
+        `${indent}  on:${event.eventType} → ${event.category}${effect}`,
+      );
+    }
+
     for (const childId of node.children) {
       printNode(childId, depth + 1);
     }
@@ -82,6 +91,7 @@ export function serializeJGF(
         state: node.state,
         value: node.value,
         backendDOMNodeId: node.backendDOMNodeId,
+        ...(node.events.length > 0 && { events: node.events }),
       },
     };
 

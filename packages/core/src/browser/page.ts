@@ -54,6 +54,7 @@ export async function connectToPage(
     cdp.send("Accessibility.enable"),
     cdp.send("Runtime.enable"),
     cdp.send("Network.enable"),
+    cdp.send("Debugger.enable"),
   ]);
 
   const navigate = async (url: string, timeoutMs = 30_000): Promise<void> => {
