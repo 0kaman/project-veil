@@ -1,0 +1,15 @@
+{
+  "name": "@veil/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "veil": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@veil/core": "workspace:*"
+  }
+}
