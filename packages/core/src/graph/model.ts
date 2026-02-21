@@ -1,3 +1,29 @@
+export interface CallFrame {
+  scriptId: string;
+  url: string;
+  functionName: string;
+  lineNumber: number;   // 0-based from CDP
+  columnNumber: number;  // 0-based from CDP
+}
+
+export interface NetworkRequest {
+  requestId: string;
+  method: string;
+  url: string;
+  initiatorType: "script" | "parser" | "other";
+  initiatorStack?: CallFrame[];
+  responseStatus?: number;
+  responseContentType?: string;
+  timestamp: number;
+}
+
+export interface NetworkEdge {
+  triggerNodeId: string;     // "" if unmatched
+  triggerEvent: string;      // 'click', 'submit', 'script' (unmatched)
+  request: { method: string; url: string };
+  response?: { status: number; contentType: string };
+}
+
 export interface EventBinding {
   eventType: string;
   category: "api_call" | "navigation" | "dom_mutation" | "form_submit" | "unknown";
@@ -31,4 +57,5 @@ export interface BehaviorGraph {
   };
   nodes: Map<string, BehaviorNode>;
   roots: string[];
+  networkEdges: NetworkEdge[];
 }

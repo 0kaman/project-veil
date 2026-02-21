@@ -1,4 +1,6 @@
 import { createCDPClient, type CDPClient } from "./cdp-client.js";
+import { NetworkCapture } from "./network-capture.js";
+import type { NetworkRequest } from "../graph/model.js";
 
 export interface AXNode {
   nodeId: string;
@@ -18,6 +20,7 @@ export interface PageHandle {
   navigate(url: string, timeoutMs?: number): Promise<void>;
   getAXTree(): Promise<AXNode[]>;
   getTitle(): Promise<string>;
+  getCapturedRequests(): NetworkRequest[];
   close(): void;
 }
 
@@ -57,7 +60,11 @@ export async function connectToPage(
     cdp.send("Debugger.enable"),
   ]);
 
+  const networkCapture = new NetworkCapture(cdp);
+
   const navigate = async (url: string, timeoutMs = 30_000): Promise<void> => {
+    await networkCapture.start();
+
     const loadPromise = new Promise<void>((resolve) => {
       const handler = () => {
         cdp.off("Page.loadEventFired", handler);
@@ -98,7 +105,11 @@ export async function connectToPage(
     navigate,
     getAXTree,
     getTitle,
+    getCapturedRequests() {
+      return networkCapture.drain();
+    },
     close() {
+      networkCapture.drain(); // detach listeners, discard data
       cdp.close();
     },
   };

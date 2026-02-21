@@ -202,5 +202,6 @@ export function buildGraphFromAXTree(
     },
     nodes: behaviorNodes,
     roots,
+    networkEdges: [],
   };
 }

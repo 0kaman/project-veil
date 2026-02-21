@@ -1,10 +1,11 @@
-export type { BehaviorNode, BehaviorGraph, EventBinding } from "./graph/model.js";
+export type { BehaviorNode, BehaviorGraph, EventBinding, NetworkEdge, NetworkRequest, CallFrame } from "./graph/model.js";
 export { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
 import { buildGraphFromAXTree } from "./pipeline/stage-1-axtree.js";
 import { enrichGraphWithEvents } from "./pipeline/stage-2-events.js";
+import { correlateNetwork } from "./pipeline/stage-3-network.js";
 import type { BehaviorGraph } from "./graph/model.js";
 import { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 
@@ -24,6 +25,8 @@ export class VeilPage {
     ]);
     const graph = buildGraphFromAXTree(axNodes, this.url, title);
     await enrichGraphWithEvents(graph, this.page.cdp);
+    const capturedRequests = this.page.getCapturedRequests();
+    correlateNetwork(graph, capturedRequests);
     return graph;
   }
 

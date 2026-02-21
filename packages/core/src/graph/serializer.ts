@@ -72,14 +72,53 @@ export function serializeCompactText(graph: BehaviorGraph): string {
     printNode(rootId, 0);
   }
 
+  // NETWORK section
+  if (graph.networkEdges.length > 0) {
+    lines.push("");
+    lines.push("NETWORK");
+    for (const edge of graph.networkEdges) {
+      const source = edge.triggerNodeId
+        ? `${displayIds.get(edge.triggerNodeId) ?? edge.triggerNodeId} on:${edge.triggerEvent}`
+        : `[page] ${edge.triggerEvent}`;
+      const resp = edge.response
+        ? ` → ${edge.response.status} (${shortContentType(edge.response.contentType)})`
+        : "";
+      lines.push(`  ${source} → ${edge.request.method} ${compactUrl(edge.request.url)}${resp}`);
+    }
+  }
+
   return lines.join("\n") + "\n";
+}
+
+function compactUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    const path = u.pathname;
+    if (!u.search) return path;
+    // Show first 60 chars of query string, truncate with ...
+    const query = u.search.length > 60 ? u.search.slice(0, 60) + "..." : u.search;
+    return path + query;
+  } catch {
+    return raw.length > 100 ? raw.slice(0, 100) + "..." : raw;
+  }
+}
+
+function shortContentType(ct: string): string {
+  if (ct.includes("json")) return "json";
+  if (ct.includes("html")) return "html";
+  if (ct.includes("javascript")) return "js";
+  if (ct.includes("css")) return "css";
+  if (ct.includes("xml")) return "xml";
+  if (ct.includes("text/plain")) return "text";
+  if (ct.includes("image/")) return "image";
+  return ct.split(";")[0].trim() || "unknown";
 }
 
 export function serializeJGF(
   graph: BehaviorGraph,
 ): Record<string, unknown> {
   const nodes: Record<string, unknown> = {};
-  const edges: Array<Record<string, string>> = [];
+  const edges: Array<Record<string, unknown>> = [];
 
   for (const [id, node] of graph.nodes) {
     nodes[id] = {
@@ -102,6 +141,20 @@ export function serializeJGF(
         relation: "contains",
       });
     }
+  }
+
+  // Add network trigger edges
+  for (const edge of graph.networkEdges) {
+    edges.push({
+      source: edge.triggerNodeId || "__page__",
+      target: `${edge.request.method}:${edge.request.url}`,
+      relation: "triggers",
+      metadata: {
+        triggerEvent: edge.triggerEvent,
+        request: edge.request,
+        ...(edge.response && { response: edge.response }),
+      },
+    });
   }
 
   return {
