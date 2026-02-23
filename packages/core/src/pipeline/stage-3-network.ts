@@ -1,29 +1,8 @@
 import type {
   BehaviorGraph,
   NetworkRequest,
-  NetworkEdge,
 } from "../graph/model.js";
-
-const FRAMEWORK_PATTERNS = [
-  /node_modules/,
-  /react-dom/,
-  /react\.development/,
-  /react\.production/,
-  /webpack/,
-  /babel/,
-  /regenerator-runtime/,
-  /tslib/,
-  /zone\.js/,
-  /angular/,
-  /vue\.runtime/,
-  /jquery/,
-  /scheduler/,
-  /chunk-vendors/,
-];
-
-function isFrameworkFrame(url: string): boolean {
-  return FRAMEWORK_PATTERNS.some((p) => p.test(url));
-}
+import { isFrameworkFrame, extractPath } from "./utils.js";
 
 /**
  * Stage 3: Correlate captured network requests to handler source locations.
@@ -119,13 +98,13 @@ export function correlateNetwork(
       });
     }
   }
-}
 
-function extractPath(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.pathname + u.search;
-  } catch {
-    return url;
+  // Post-correlation feedback: promote unknown handlers that have estimatedEffect
+  for (const [, node] of graph.nodes) {
+    for (const event of node.events) {
+      if (event.category === "unknown" && event.estimatedEffect) {
+        event.category = "api_call";
+      }
+    }
   }
 }

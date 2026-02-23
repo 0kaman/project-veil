@@ -23,11 +23,17 @@ importers:
 
   packages/cli:
     dependencies:
+      '@veil/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
+  packages/core: {}
+
+  packages/sdk:
+    dependencies:
       '@veil/core':
         specifier: workspace:*
         version: link:../core
-
-  packages/core: {}
 
 packages:
 

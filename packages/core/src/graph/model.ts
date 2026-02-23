@@ -59,3 +59,35 @@ export interface BehaviorGraph {
   roots: string[];
   networkEdges: NetworkEdge[];
 }
+
+// --- Interaction types ---
+
+export type InteractAction =
+  | { action: "click" }
+  | { action: "type"; text: string }
+  | { action: "clear" }
+  | { action: "select"; value: string }
+  | { action: "focus" }
+  | { action: "hover" };
+
+export interface NodeFilter {
+  role?: string;
+  name?: string | RegExp;
+  hasEvent?: string;
+  state?: Record<string, string | boolean>;
+}
+
+export type VeilErrorCode =
+  | "NODE_NOT_FOUND"
+  | "NODE_NOT_INTERACTIVE"
+  | "INTERACTION_FAILED";
+
+export class VeilError extends Error {
+  code: VeilErrorCode;
+
+  constructor(code: VeilErrorCode, message: string) {
+    super(message);
+    this.name = "VeilError";
+    this.code = code;
+  }
+}

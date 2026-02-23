@@ -1,40 +1,40 @@
 #!/usr/bin/env node
 
-import { Veil } from "@veil/core";
+import { Veil, serializeCompactText, serializeJGF } from "@veil/sdk";
+import type { InteractAction } from "@veil/sdk";
 
-const USAGE = `Usage: veil decompose <url> [--timeout N] [--json]
+const USAGE = `Usage:
+  veil decompose <url> [--timeout N] [--json]
+  veil interact <url> <nodeId> <action> [value]
 
-Decompose a webpage into a behavior graph.
+Commands:
+  decompose   Decompose a webpage into a behavior graph
+  interact    Interact with a node, then output the new graph
 
-Options:
+Decompose options:
   --timeout N   Navigation timeout in seconds (default: 30)
-  --json        Output in JSON Graph Format instead of compact text`;
+  --json        Output in JSON Graph Format instead of compact text
 
-function parseArgs(argv: string[]): {
+Interact actions:
+  click         Click on the node
+  type <text>   Type text into the node
+  clear         Clear the node's value
+  select <val>  Select an option by value
+  focus         Focus the node
+  hover         Hover over the node`;
+
+function parseDecomposeArgs(args: string[]): {
   url: string;
   timeout: number;
   json: boolean;
 } {
-  const args = argv.slice(2);
-
-  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-    console.log(USAGE);
-    process.exit(0);
-  }
-
-  if (args[0] !== "decompose") {
-    console.error(`Unknown command: ${args[0]}\n`);
-    console.error(USAGE);
-    process.exit(1);
-  }
-
-  if (!args[1] || args[1].startsWith("--")) {
+  if (!args[0] || args[0].startsWith("--")) {
     console.error("Error: URL is required\n");
     console.error(USAGE);
     process.exit(1);
   }
 
-  let url = args[1];
+  let url = args[0];
   if (!/^https?:\/\//.test(url)) {
     url = `https://${url}`;
   }
@@ -42,7 +42,7 @@ function parseArgs(argv: string[]): {
   let timeout = 30;
   let json = false;
 
-  for (let i = 2; i < args.length; i++) {
+  for (let i = 1; i < args.length; i++) {
     if (args[i] === "--json") {
       json = true;
     } else if (args[i] === "--timeout" && args[i + 1]) {
@@ -62,8 +62,80 @@ function parseArgs(argv: string[]): {
   return { url, timeout, json };
 }
 
+function parseInteractArgs(args: string[]): {
+  url: string;
+  nodeId: string;
+  action: InteractAction;
+} {
+  if (args.length < 3) {
+    console.error("Error: interact requires <url> <nodeId> <action> [value]\n");
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  let url = args[0];
+  if (!/^https?:\/\//.test(url)) {
+    url = `https://${url}`;
+  }
+
+  const nodeId = args[1];
+  const actionName = args[2];
+
+  let action: InteractAction;
+  switch (actionName) {
+    case "click":
+      action = { action: "click" };
+      break;
+    case "type":
+      if (!args[3]) {
+        console.error("Error: type action requires a text value\n");
+        console.error(USAGE);
+        process.exit(1);
+      }
+      action = { action: "type", text: args[3] };
+      break;
+    case "clear":
+      action = { action: "clear" };
+      break;
+    case "select":
+      if (!args[3]) {
+        console.error("Error: select action requires a value\n");
+        console.error(USAGE);
+        process.exit(1);
+      }
+      action = { action: "select", value: args[3] };
+      break;
+    case "focus":
+      action = { action: "focus" };
+      break;
+    case "hover":
+      action = { action: "hover" };
+      break;
+    default:
+      console.error(`Unknown action: ${actionName}\n`);
+      console.error(USAGE);
+      process.exit(1);
+  }
+
+  return { url, nodeId, action };
+}
+
 async function main(): Promise<void> {
-  const { url, timeout, json } = parseArgs(process.argv);
+  const args = process.argv.slice(2);
+
+  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+    console.log(USAGE);
+    process.exit(0);
+  }
+
+  const command = args[0];
+  const commandArgs = args.slice(1);
+
+  if (command !== "decompose" && command !== "interact") {
+    console.error(`Unknown command: ${command}\n`);
+    console.error(USAGE);
+    process.exit(1);
+  }
 
   const veil = new Veil();
 
@@ -75,17 +147,29 @@ async function main(): Promise<void> {
   process.on("SIGTERM", cleanup);
 
   try {
-    const page = await veil.open(url);
+    if (command === "decompose") {
+      const { url, json } = parseDecomposeArgs(commandArgs);
+      const page = await veil.open(url);
 
-    if (json) {
-      const result = await page.toJSON();
-      console.log(JSON.stringify(result, null, 2));
+      if (json) {
+        const graph = await page.getGraph();
+        console.log(JSON.stringify(serializeJGF(graph), null, 2));
+      } else {
+        const graph = await page.getGraph();
+        console.log(serializeCompactText(graph));
+      }
+
+      page.close();
     } else {
-      const text = await page.toCompactText();
-      console.log(text);
-    }
+      const { url, nodeId, action } = parseInteractArgs(commandArgs);
+      const page = await veil.open(url);
 
-    page.close();
+      console.error(`Interacting: ${action.action} on "${nodeId}"...`);
+      const newGraph = await page.interact(nodeId, action);
+      console.log(serializeCompactText(newGraph));
+
+      page.close();
+    }
   } catch (err) {
     console.error(
       `Error: ${err instanceof Error ? err.message : String(err)}`,

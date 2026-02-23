@@ -1,5 +1,6 @@
 import { createCDPClient, type CDPClient } from "./cdp-client.js";
 import { NetworkCapture } from "./network-capture.js";
+import { INSTRUMENTATION_SCRIPT } from "./instrumentation.js";
 import type { NetworkRequest } from "../graph/model.js";
 
 export interface AXNode {
@@ -21,6 +22,8 @@ export interface PageHandle {
   getAXTree(): Promise<AXNode[]>;
   getTitle(): Promise<string>;
   getCapturedRequests(): NetworkRequest[];
+  startNetworkCapture(): Promise<void>;
+  getCurrentUrl(): Promise<string>;
   close(): void;
 }
 
@@ -59,6 +62,10 @@ export async function connectToPage(
     cdp.send("Network.enable"),
     cdp.send("Debugger.enable"),
   ]);
+
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: INSTRUMENTATION_SCRIPT,
+  });
 
   const networkCapture = new NetworkCapture(cdp);
 
@@ -100,6 +107,18 @@ export async function connectToPage(
     return result.result.value ?? "";
   };
 
+  const startNetworkCapture = async (): Promise<void> => {
+    await networkCapture.start();
+  };
+
+  const getCurrentUrl = async (): Promise<string> => {
+    const result = (await cdp.send("Runtime.evaluate", {
+      expression: "window.location.href",
+      returnByValue: true,
+    })) as { result: { value: string } };
+    return result.result.value ?? "";
+  };
+
   return {
     cdp,
     navigate,
@@ -108,6 +127,8 @@ export async function connectToPage(
     getCapturedRequests() {
       return networkCapture.drain();
     },
+    startNetworkCapture,
+    getCurrentUrl,
     close() {
       networkCapture.drain(); // detach listeners, discard data
       cdp.close();
@@ -115,7 +136,7 @@ export async function connectToPage(
   };
 }
 
-async function waitForNetworkIdle(cdp: CDPClient): Promise<void> {
+export async function waitForNetworkIdle(cdp: CDPClient): Promise<void> {
   let inflight = 0;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   const IDLE_WAIT = 2_000;

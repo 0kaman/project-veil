@@ -1,0 +1,20 @@
+{
+  "name": "@veil/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@veil/core": "workspace:*"
+  }
+}

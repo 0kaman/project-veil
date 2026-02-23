@@ -1,5 +1,14 @@
 import type { CDPClient } from "../browser/cdp-client.js";
 import type { BehaviorGraph, EventBinding } from "../graph/model.js";
+import {
+  queryInjectedRegistry,
+  type InjectedRegistryData,
+} from "../browser/instrumentation.js";
+import {
+  isFrameworkFrame,
+  parseStackFrames,
+  extractPath,
+} from "./utils.js";
 
 const INTERACTIVE_ROLES = new Set([
   "button",
@@ -53,6 +62,9 @@ export async function enrichGraphWithEvents(
   await new Promise((r) => setTimeout(r, 50));
   cdp.off("Debugger.scriptParsed", onScriptParsed);
 
+  // Query injected registry once (covers all elements)
+  const injectedData = await queryInjectedRegistry(cdp);
+
   for (const [, node] of graph.nodes) {
     if (!INTERACTIVE_ROLES.has(node.role)) continue;
     if (node.backendDOMNodeId === 0) continue;
@@ -60,7 +72,9 @@ export async function enrichGraphWithEvents(
     try {
       const events = await getNodeEvents(cdp, node.backendDOMNodeId, scriptUrls);
       if (events.length > 0) {
-        node.events = deduplicateEvents(events);
+        node.events = deduplicateEvents(
+          enrichFromInjectedData(events, injectedData),
+        );
       }
     } catch {
       // Node may have been removed from DOM between AXTree snapshot and now — skip
@@ -281,5 +295,93 @@ function deduplicateEvents(events: EventBinding[]): EventBinding[] {
   }
 
   return result;
+}
+
+/**
+ * Cross-reference unknown handler categories against injected runtime data.
+ * Uses stack trace overlap between listener registrations and network/navigation
+ * calls to infer what a handler actually does.
+ */
+function enrichFromInjectedData(
+  events: EventBinding[],
+  injectedData: InjectedRegistryData,
+): EventBinding[] {
+  if (
+    injectedData.networkCalls.length === 0 &&
+    injectedData.navigations.length === 0
+  ) {
+    return events;
+  }
+
+  // Pre-build sets of non-framework frames from network calls and navigations
+  const networkFrameSets: Array<{ frames: Set<string>; method: string; url: string }> = [];
+  for (const call of injectedData.networkCalls) {
+    const parsed = parseStackFrames(call.stack);
+    const appFrames = new Set(parsed.filter((f) => !isFrameworkFrame(f)));
+    if (appFrames.size > 0) {
+      networkFrameSets.push({ frames: appFrames, method: call.method, url: call.url });
+    }
+  }
+
+  const navFrameSets: Array<{ frames: Set<string>; url: string }> = [];
+  for (const nav of injectedData.navigations) {
+    const parsed = parseStackFrames(nav.stack);
+    const appFrames = new Set(parsed.filter((f) => !isFrameworkFrame(f)));
+    if (appFrames.size > 0) {
+      navFrameSets.push({ frames: appFrames, url: nav.url });
+    }
+  }
+
+  // Build a map of listener registration stacks by eventType
+  const listenerStacksByType = new Map<string, string[][]>();
+  for (const entry of injectedData.listeners) {
+    const parsed = parseStackFrames(entry.stack);
+    const appFrames = parsed.filter((f) => !isFrameworkFrame(f));
+    if (appFrames.length === 0) continue;
+    let list = listenerStacksByType.get(entry.eventType);
+    if (!list) {
+      list = [];
+      listenerStacksByType.set(entry.eventType, list);
+    }
+    list.push(appFrames);
+  }
+
+  for (const event of events) {
+    if (event.category !== "unknown") continue;
+
+    // Find injected listener stacks matching this event type
+    const stacks = listenerStacksByType.get(event.eventType);
+    if (!stacks) continue;
+
+    let resolved = false;
+
+    for (const listenerFrames of stacks) {
+      if (resolved) break;
+
+      // Check overlap with network call stacks
+      for (const netEntry of networkFrameSets) {
+        if (listenerFrames.some((f) => netEntry.frames.has(f))) {
+          event.category = "api_call";
+          event.estimatedEffect = `${netEntry.method} ${extractPath(netEntry.url)}`;
+          resolved = true;
+          break;
+        }
+      }
+
+      if (resolved) break;
+
+      // Check overlap with navigation stacks
+      for (const navEntry of navFrameSets) {
+        if (listenerFrames.some((f) => navEntry.frames.has(f))) {
+          event.category = "navigation";
+          event.estimatedEffect = extractPath(navEntry.url);
+          resolved = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return events;
 }
 

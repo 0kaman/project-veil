@@ -1,30 +1,9 @@
-import type { BehaviorGraph, BehaviorNode } from "./model.js";
-
-function makeDisplayId(node: BehaviorNode): string {
-  const name = node.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 30);
-  return name ? `${node.role}-${name}` : `${node.role}-${node.id}`;
-}
+import type { BehaviorGraph } from "./model.js";
+import { buildDisplayIdRegistry } from "./display-ids.js";
 
 export function serializeCompactText(graph: BehaviorGraph): string {
   const lines: string[] = [];
-  const displayIds = new Map<string, string>();
-
-  // Assign display IDs
-  const usedIds = new Set<string>();
-  for (const [id, node] of graph.nodes) {
-    let displayId = makeDisplayId(node);
-    if (usedIds.has(displayId)) {
-      let i = 2;
-      while (usedIds.has(`${displayId}-${i}`)) i++;
-      displayId = `${displayId}-${i}`;
-    }
-    usedIds.add(displayId);
-    displayIds.set(id, displayId);
-  }
+  const { toDisplay: displayIds } = buildDisplayIdRegistry(graph);
 
   lines.push(`PAGE ${graph.metadata.url} "${graph.metadata.title}"`);
   lines.push(`STATE route:${graph.metadata.route}`);
