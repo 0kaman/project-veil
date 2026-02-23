@@ -22,6 +22,7 @@ export interface PageHandle {
   getAXTree(): Promise<AXNode[]>;
   getTitle(): Promise<string>;
   getCapturedRequests(): NetworkRequest[];
+  getNewCapturedRequests(): NetworkRequest[];
   startNetworkCapture(): Promise<void>;
   getCurrentUrl(): Promise<string>;
   close(): void;
@@ -63,15 +64,19 @@ export async function connectToPage(
     cdp.send("Debugger.enable"),
   ]);
 
+  // Required for DOM mutation events — CDP only sends events for tracked nodes
+  await cdp.send("DOM.getDocument", { depth: -1 });
+
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
     source: INSTRUMENTATION_SCRIPT,
   });
 
   const networkCapture = new NetworkCapture(cdp);
 
-  const navigate = async (url: string, timeoutMs = 30_000): Promise<void> => {
-    await networkCapture.start();
+  // Start capture immediately so requests are collected from the start
+  await networkCapture.start();
 
+  const navigate = async (url: string, timeoutMs = 30_000): Promise<void> => {
     const loadPromise = new Promise<void>((resolve) => {
       const handler = () => {
         cdp.off("Page.loadEventFired", handler);
@@ -126,6 +131,9 @@ export async function connectToPage(
     getTitle,
     getCapturedRequests() {
       return networkCapture.drain();
+    },
+    getNewCapturedRequests() {
+      return networkCapture.drainNew();
     },
     startNetworkCapture,
     getCurrentUrl,

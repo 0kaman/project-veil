@@ -22,6 +22,8 @@ export type {
   NodeFilter,
   VeilErrorCode,
   DisplayIdRegistry,
+  GraphDiff,
+  GraphChangeCallback,
 } from "@veil/core";
 
 // SDK-specific types

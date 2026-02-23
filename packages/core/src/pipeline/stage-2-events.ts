@@ -44,11 +44,7 @@ interface ReactHandlerInfo {
   handlerString: string;
 }
 
-export async function enrichGraphWithEvents(
-  graph: BehaviorGraph,
-  cdp: CDPClient,
-): Promise<void> {
-  // Collect script URL map by re-enabling Debugger (replays scriptParsed for all scripts)
+export async function collectScriptUrls(cdp: CDPClient): Promise<Map<string, string>> {
   const scriptUrls = new Map<string, string>();
   const onScriptParsed = (params: unknown) => {
     const p = params as { scriptId: string; url?: string };
@@ -61,11 +57,48 @@ export async function enrichGraphWithEvents(
   // Brief wait for scriptParsed events to arrive
   await new Promise((r) => setTimeout(r, 50));
   cdp.off("Debugger.scriptParsed", onScriptParsed);
+  return scriptUrls;
+}
+
+export async function enrichGraphWithEvents(
+  graph: BehaviorGraph,
+  cdp: CDPClient,
+): Promise<void> {
+  const scriptUrls = await collectScriptUrls(cdp);
 
   // Query injected registry once (covers all elements)
   const injectedData = await queryInjectedRegistry(cdp);
 
   for (const [, node] of graph.nodes) {
+    if (!INTERACTIVE_ROLES.has(node.role)) continue;
+    if (node.backendDOMNodeId === 0) continue;
+
+    try {
+      const events = await getNodeEvents(cdp, node.backendDOMNodeId, scriptUrls);
+      if (events.length > 0) {
+        node.events = deduplicateEvents(
+          enrichFromInjectedData(events, injectedData),
+        );
+      }
+    } catch {
+      // Node may have been removed from DOM between AXTree snapshot and now — skip
+    }
+  }
+}
+
+export async function enrichSpecificNodesWithEvents(
+  graph: BehaviorGraph,
+  cdp: CDPClient,
+  nodeIds: Set<string>,
+): Promise<void> {
+  if (nodeIds.size === 0) return;
+
+  const scriptUrls = await collectScriptUrls(cdp);
+  const injectedData = await queryInjectedRegistry(cdp);
+
+  for (const nodeId of nodeIds) {
+    const node = graph.nodes.get(nodeId);
+    if (!node) continue;
     if (!INTERACTIVE_ROLES.has(node.role)) continue;
     if (node.backendDOMNodeId === 0) continue;
 

@@ -60,10 +60,13 @@ interface PendingRequest {
   timestamp: number;
 }
 
+const MAX_COMPLETED = 2000;
+
 export class NetworkCapture {
   private cdp: CDPClient;
   private pending = new Map<string, PendingRequest>();
   private completed: NetworkRequest[] = [];
+  private lastDrainIndex = 0;
   private onRequest: ((params: unknown) => void) | null = null;
   private onResponse: ((params: unknown) => void) | null = null;
 
@@ -124,6 +127,13 @@ export class NetworkCapture {
         responseStatus: p.response.status,
         responseContentType: p.response.mimeType,
       });
+
+      // Evict oldest entries when over cap
+      if (this.completed.length > MAX_COMPLETED) {
+        const evictCount = this.completed.length - MAX_COMPLETED;
+        this.completed.splice(0, evictCount);
+        this.lastDrainIndex = Math.max(0, this.lastDrainIndex - evictCount);
+      }
     };
 
     this.cdp.on("Network.requestWillBeSent", this.onRequest);
@@ -156,7 +166,21 @@ export class NetworkCapture {
       return true;
     });
     this.completed = [];
+    this.lastDrainIndex = 0;
     return result;
+  }
+
+  drainNew(): NetworkRequest[] {
+    const newRequests = this.completed.slice(this.lastDrainIndex);
+    this.lastDrainIndex = this.completed.length;
+
+    return newRequests.filter((req) => {
+      if (req.responseContentType) {
+        const mime = req.responseContentType;
+        if (RESOURCE_MIME_TYPES.some((prefix) => mime.startsWith(prefix))) return false;
+      }
+      return true;
+    });
   }
 }
 

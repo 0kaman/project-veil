@@ -55,10 +55,19 @@ export interface BehaviorGraph {
     timestamp: number;
     route: string;
   };
+  version: number;
   nodes: Map<string, BehaviorNode>;
   roots: string[];
   networkEdges: NetworkEdge[];
 }
+
+export interface GraphDiff {
+  added: string[];
+  removed: string[];
+  modified: string[];
+}
+
+export type GraphChangeCallback = (graph: BehaviorGraph, diff: GraphDiff) => void;
 
 // --- Interaction types ---
 

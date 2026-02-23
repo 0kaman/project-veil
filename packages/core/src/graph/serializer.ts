@@ -140,6 +140,7 @@ export function serializeJGF(
     graph: {
       type: "behavior-graph",
       metadata: graph.metadata,
+      version: graph.version,
       nodes,
       edges,
     },
