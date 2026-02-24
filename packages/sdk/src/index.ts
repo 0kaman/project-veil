@@ -8,7 +8,7 @@ export { VeilError } from "@veil/core";
 export { serializeCompactText, serializeJGF } from "@veil/core";
 
 // Query + Display IDs
-export { queryNodes, buildDisplayIdRegistry } from "@veil/core";
+export { queryNodes, buildDisplayIdRegistry, buildApiEndpoints } from "@veil/core";
 
 // Types
 export type {
@@ -24,6 +24,7 @@ export type {
   DisplayIdRegistry,
   GraphDiff,
   GraphChangeCallback,
+  ApiEndpoint,
 } from "@veil/core";
 
 // SDK-specific types

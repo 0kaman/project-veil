@@ -11,11 +11,13 @@ export type {
   VeilErrorCode,
   GraphDiff,
   GraphChangeCallback,
+  ApiEndpoint,
 } from "./graph/model.js";
 export { VeilError } from "./graph/model.js";
 export { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 export { buildDisplayIdRegistry, type DisplayIdRegistry } from "./graph/display-ids.js";
 export { queryNodes } from "./graph/query.js";
+export { buildApiEndpoints } from "./pipeline/api-endpoints.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
@@ -62,6 +64,9 @@ export class VeilPage {
     await enrichGraphWithEvents(graph, this.page.cdp);
     const capturedRequests = this.page.getCapturedRequests();
     correlateNetwork(graph, capturedRequests);
+
+    // drain() detaches CDP listeners — restart so future requests are captured
+    await this.page.startNetworkCapture();
 
     this.cachedGraph = graph;
 

@@ -3,6 +3,7 @@ import type {
   NetworkRequest,
 } from "../graph/model.js";
 import { isFrameworkFrame, extractPath } from "./utils.js";
+import { inferJsonShape, buildApiEndpoints } from "./api-endpoints.js";
 
 /**
  * Stage 3: Correlate captured network requests to handler source locations.
@@ -107,4 +108,90 @@ export function correlateNetwork(
       }
     }
   }
+
+  // --- Enrichment: body shapes + URL patterns + API endpoints ---
+
+  // Build request index for body lookups: "METHOD:url" → NetworkRequest
+  const requestIndex = new Map<string, NetworkRequest>();
+  for (const req of capturedRequests) {
+    requestIndex.set(`${req.method}:${req.url}`, req);
+  }
+
+  // Enrich edges with body shapes from captured requests
+  for (const edge of graph.networkEdges) {
+    const req = requestIndex.get(`${edge.request.method}:${edge.request.url}`);
+    if (!req) continue;
+
+    // Response body shape
+    if (req.responseBody && edge.response) {
+      const shape = inferJsonShape(req.responseBody);
+      if (shape) {
+        edge.response.bodyShape = shape;
+      }
+    }
+
+    // Request body shape (attach to response metadata for simplicity)
+    // Request shapes are collected during buildApiEndpoints below
+  }
+
+  // Build API endpoint catalog and set urlPatterns on edges
+  graph.apiEndpoints = buildApiEndpoints(graph.networkEdges);
+
+  // Back-fill urlPattern on edges from endpoint patterns
+  const patternByMethodPrefix = new Map<string, string>();
+  for (const ep of graph.apiEndpoints) {
+    patternByMethodPrefix.set(`${ep.method}:${ep.pattern}`, ep.pattern);
+  }
+  for (const edge of graph.networkEdges) {
+    // Find the endpoint whose pattern matches this edge
+    for (const ep of graph.apiEndpoints) {
+      if (ep.method !== edge.request.method) continue;
+      // Check if this edge's URL belongs to this endpoint group
+      try {
+        const pathname = new URL(edge.request.url).pathname;
+        if (pathMatchesPattern(pathname, ep.pattern)) {
+          edge.urlPattern = ep.pattern;
+          break;
+        }
+      } catch {
+        // skip
+      }
+    }
+  }
+
+  // Enrich endpoints with request body shapes
+  for (const ep of graph.apiEndpoints) {
+    for (const req of capturedRequests) {
+      if (req.method !== ep.method || !req.requestBody) continue;
+      try {
+        const pathname = new URL(req.url).pathname;
+        if (pathMatchesPattern(pathname, ep.pattern)) {
+          const shape = inferJsonShape(req.requestBody);
+          if (shape) {
+            ep.requestShape = shape;
+            break; // first match is enough
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+  }
+}
+
+/** Check if a concrete pathname matches a parameterized pattern. */
+function pathMatchesPattern(pathname: string, pattern: string): boolean {
+  // Strip query from pattern
+  const patternPath = pattern.split("?")[0];
+  const pathSegs = pathname.split("/").filter(Boolean);
+  const patternSegs = patternPath.split("/").filter(Boolean);
+
+  if (pathSegs.length !== patternSegs.length) return false;
+
+  for (let i = 0; i < patternSegs.length; i++) {
+    const ps = patternSegs[i];
+    if (ps.startsWith("{") && ps.endsWith("}")) continue; // wildcard
+    if (ps !== pathSegs[i]) return false;
+  }
+  return true;
 }

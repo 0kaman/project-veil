@@ -17,7 +17,7 @@ interface CDPStackTrace {
 
 interface CDPRequestWillBeSent {
   requestId: string;
-  request: { url: string; method: string };
+  request: { url: string; method: string; postData?: string };
   initiator: {
     type: string;
     stack?: CDPStackTrace;
@@ -58,6 +58,7 @@ interface PendingRequest {
   initiatorType: "script" | "parser" | "other";
   initiatorStack?: CallFrame[];
   timestamp: number;
+  requestBody?: string;
 }
 
 const MAX_COMPLETED = 2000;
@@ -104,6 +105,8 @@ export class NetworkCapture {
             ? "parser"
             : "other";
 
+      const hasBody = p.request.method === "POST" || p.request.method === "PUT" || p.request.method === "PATCH";
+
       this.pending.set(p.requestId, {
         requestId: p.requestId,
         method: p.request.method,
@@ -113,6 +116,9 @@ export class NetworkCapture {
           ? flattenStack(p.initiator.stack)
           : undefined,
         timestamp: p.timestamp,
+        ...(hasBody && p.request.postData && {
+          requestBody: p.request.postData.slice(0, 4096),
+        }),
       });
     };
 
@@ -122,11 +128,25 @@ export class NetworkCapture {
       if (!req) return;
 
       this.pending.delete(p.requestId);
-      this.completed.push({
+      const completed: NetworkRequest = {
         ...req,
         responseStatus: p.response.status,
         responseContentType: p.response.mimeType,
-      });
+      };
+      this.completed.push(completed);
+
+      // Fire-and-forget: capture response body for JSON responses
+      if (p.response.mimeType.includes("json")) {
+        this.cdp
+          .send("Network.getResponseBody", { requestId: p.requestId })
+          .then((result) => {
+            const body = (result as { body: string }).body;
+            if (body) {
+              completed.responseBody = body.slice(0, 4096);
+            }
+          })
+          .catch(() => {});
+      }
 
       // Evict oldest entries when over cap
       if (this.completed.length > MAX_COMPLETED) {

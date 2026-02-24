@@ -59,10 +59,29 @@ export function serializeCompactText(graph: BehaviorGraph): string {
       const source = edge.triggerNodeId
         ? `${displayIds.get(edge.triggerNodeId) ?? edge.triggerNodeId} on:${edge.triggerEvent}`
         : `[page] ${edge.triggerEvent}`;
+      const url = edge.urlPattern ?? compactUrl(edge.request.url);
       const resp = edge.response
         ? ` → ${edge.response.status} (${shortContentType(edge.response.contentType)})`
         : "";
-      lines.push(`  ${source} → ${edge.request.method} ${compactUrl(edge.request.url)}${resp}`);
+      lines.push(`  ${source} → ${edge.request.method} ${url}${resp}`);
+    }
+  }
+
+  // APIS section
+  if (graph.apiEndpoints && graph.apiEndpoints.length > 0) {
+    lines.push("");
+    lines.push("APIS");
+    for (const ep of graph.apiEndpoints) {
+      const status = ep.statusCodes.join(",");
+      const ct = ep.contentType ?? "unknown";
+      let shape = "";
+      if (ep.responseShape) {
+        const entries = Object.entries(ep.responseShape)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(", ");
+        shape = ` { ${entries} }`;
+      }
+      lines.push(`  ${ep.method} ${ep.pattern} → ${status} ${ct}${shape}`);
     }
   }
 
@@ -132,6 +151,7 @@ export function serializeJGF(
         triggerEvent: edge.triggerEvent,
         request: edge.request,
         ...(edge.response && { response: edge.response }),
+        ...(edge.urlPattern && { urlPattern: edge.urlPattern }),
       },
     });
   }
@@ -143,6 +163,9 @@ export function serializeJGF(
       version: graph.version,
       nodes,
       edges,
+      ...(graph.apiEndpoints && graph.apiEndpoints.length > 0 && {
+        apiEndpoints: graph.apiEndpoints,
+      }),
     },
   };
 }

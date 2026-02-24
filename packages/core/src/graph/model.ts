@@ -15,13 +15,30 @@ export interface NetworkRequest {
   responseStatus?: number;
   responseContentType?: string;
   timestamp: number;
+  responseBody?: string;   // Raw JSON body (truncated to 4KB)
+  requestBody?: string;    // POST/PUT body (truncated to 4KB)
 }
 
 export interface NetworkEdge {
   triggerNodeId: string;     // "" if unmatched
   triggerEvent: string;      // 'click', 'submit', 'script' (unmatched)
   request: { method: string; url: string };
-  response?: { status: number; contentType: string };
+  response?: {
+    status: number;
+    contentType: string;
+    bodyShape?: Record<string, string>;  // { name: "string", id: "number" }
+  };
+  urlPattern?: string;  // /api/users/{id}
+}
+
+export interface ApiEndpoint {
+  pattern: string;                          // /api/users/{id}
+  method: string;                           // GET
+  responseShape?: Record<string, string>;   // { id: "number", name: "string" }
+  requestShape?: Record<string, string>;    // POST body shape
+  statusCodes: number[];                    // [200, 201]
+  contentType?: string;                     // json, html
+  count: number;                            // times observed
 }
 
 export interface EventBinding {
@@ -59,6 +76,7 @@ export interface BehaviorGraph {
   nodes: Map<string, BehaviorNode>;
   roots: string[];
   networkEdges: NetworkEdge[];
+  apiEndpoints: ApiEndpoint[];
 }
 
 export interface GraphDiff {
