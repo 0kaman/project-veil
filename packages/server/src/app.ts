@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { ServerType } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
+import type { VeilConfig } from "@veil/sdk";
 import { SessionManager } from "./sessions.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { graphRoutes } from "./routes/graph.js";
@@ -15,9 +16,9 @@ export interface AppContext {
   injectWebSocket: (server: ServerType) => void;
 }
 
-export function createApp(config: Partial<ServerConfig> = {}): AppContext {
+export function createApp(config: Partial<ServerConfig> = {}, veilConfig?: VeilConfig): AppContext {
   const { maxSessions } = { ...DEFAULT_CONFIG, ...config };
-  const manager = new SessionManager(maxSessions);
+  const manager = new SessionManager(maxSessions, veilConfig);
   const app = new Hono();
 
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });

@@ -1,4 +1,4 @@
-import type { BehaviorGraph } from "./model.js";
+import type { BehaviorGraph, SemanticLabel } from "./model.js";
 import { buildDisplayIdRegistry } from "./display-ids.js";
 
 export function serializeCompactText(graph: BehaviorGraph): string {
@@ -39,6 +39,12 @@ export function serializeCompactText(graph: BehaviorGraph): string {
         : "";
       lines.push(
         `${indent}  on:${event.eventType} → ${event.category}${effect}`,
+      );
+    }
+
+    if (node.semanticLabel) {
+      lines.push(
+        `${indent}  semantic: ${formatSemanticLabel(node.semanticLabel)}`,
       );
     }
 
@@ -85,7 +91,29 @@ export function serializeCompactText(graph: BehaviorGraph): string {
     }
   }
 
+  // COMPONENTS section
+  if (graph.componentGroups && graph.componentGroups.length > 0) {
+    lines.push("");
+    lines.push("COMPONENTS");
+    for (const group of graph.componentGroups) {
+      const semantic = group.semanticLabel
+        ? ` semantic:${group.semanticLabel.category}:${group.semanticLabel.action}`
+        : "";
+      lines.push(
+        `  ${group.id} [${group.framework}] "${group.componentName}"${semantic}`,
+      );
+      const memberDisplayIds = group.memberNodeIds.map(
+        (id) => displayIds.get(id) ?? id,
+      );
+      lines.push(`    members: ${memberDisplayIds.join(", ")}`);
+    }
+  }
+
   return lines.join("\n") + "\n";
+}
+
+function formatSemanticLabel(label: SemanticLabel): string {
+  return `${label.category}:${label.action} (${label.confidence.toFixed(2)}, ${label.source})`;
 }
 
 function compactUrl(raw: string): string {
@@ -129,6 +157,8 @@ export function serializeJGF(
         value: node.value,
         backendDOMNodeId: node.backendDOMNodeId,
         ...(node.events.length > 0 && { events: node.events }),
+        ...(node.componentId && { componentId: node.componentId }),
+        ...(node.semanticLabel && { semanticLabel: node.semanticLabel }),
       },
     };
 
@@ -165,6 +195,9 @@ export function serializeJGF(
       edges,
       ...(graph.apiEndpoints && graph.apiEndpoints.length > 0 && {
         apiEndpoints: graph.apiEndpoints,
+      }),
+      ...(graph.componentGroups && graph.componentGroups.length > 0 && {
+        componentGroups: graph.componentGroups,
       }),
     },
   };

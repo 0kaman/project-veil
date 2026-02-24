@@ -29,6 +29,10 @@ export function queryNodes(graph: BehaviorGraph, filter: NodeFilter): BehaviorNo
       if (!stateMatch) continue;
     }
 
+    if (filter.semanticCategory && node.semanticLabel?.category !== filter.semanticCategory) continue;
+    if (filter.semanticAction && node.semanticLabel?.action !== filter.semanticAction) continue;
+    if (filter.componentId && node.componentId !== filter.componentId) continue;
+
     results.push(node);
   }
 

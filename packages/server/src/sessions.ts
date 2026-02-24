@@ -1,4 +1,4 @@
-import { Veil, type VeilPage, type GraphChangeCallback } from "@veil/sdk";
+import { Veil, type VeilPage, type VeilConfig, type GraphChangeCallback } from "@veil/sdk";
 import { ServerError } from "./errors.js";
 import type { SessionInfo } from "./types.js";
 
@@ -16,8 +16,8 @@ export class SessionManager {
   private sessions = new Map<string, Session>();
   private maxSessions: number;
 
-  constructor(maxSessions = 10) {
-    this.veil = new Veil();
+  constructor(maxSessions = 10, veilConfig?: VeilConfig) {
+    this.veil = new Veil(veilConfig);
     this.maxSessions = maxSessions;
   }
 

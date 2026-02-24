@@ -12,12 +12,17 @@ export type {
   GraphDiff,
   GraphChangeCallback,
   ApiEndpoint,
+  ComponentGroup,
+  SemanticLabel,
+  VeilConfig,
 } from "./graph/model.js";
 export { VeilError } from "./graph/model.js";
 export { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 export { buildDisplayIdRegistry, type DisplayIdRegistry } from "./graph/display-ids.js";
 export { queryNodes } from "./graph/query.js";
 export { buildApiEndpoints } from "./pipeline/api-endpoints.js";
+export { groupComponents } from "./pipeline/stage-4-components.js";
+export { inferSemantics } from "./pipeline/stage-5-semantics.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
@@ -30,13 +35,16 @@ import { MutationWatcher } from "./browser/mutation-watcher.js";
 import { dispatchInteraction } from "./browser/interactions.js";
 import { buildDisplayIdRegistry } from "./graph/display-ids.js";
 import { queryNodes } from "./graph/query.js";
-import type { BehaviorGraph, BehaviorNode, InteractAction, NodeFilter, GraphDiff, GraphChangeCallback } from "./graph/model.js";
+import type { BehaviorGraph, BehaviorNode, InteractAction, NodeFilter, GraphDiff, GraphChangeCallback, VeilConfig } from "./graph/model.js";
 import { VeilError } from "./graph/model.js";
 import { serializeCompactText, serializeJGF } from "./graph/serializer.js";
+import { groupComponents, regroupComponents } from "./pipeline/stage-4-components.js";
+import { inferSemantics, reinferSemantics } from "./pipeline/stage-5-semantics.js";
 
 export class VeilPage {
   private page: PageHandle;
   private url: string;
+  private config?: VeilConfig;
   private cachedGraph: BehaviorGraph | null = null;
   private lastSnapshot: DiffableSnapshot | null = null;
   private mutationWatcher: MutationWatcher | null = null;
@@ -45,9 +53,10 @@ export class VeilPage {
   private updateInProgress = false;
   private pendingUpdate = false;
 
-  constructor(page: PageHandle, url: string) {
+  constructor(page: PageHandle, url: string, config?: VeilConfig) {
     this.page = page;
     this.url = url;
+    this.config = config;
   }
 
   async getGraph(): Promise<BehaviorGraph> {
@@ -67,6 +76,12 @@ export class VeilPage {
 
     // drain() detaches CDP listeners — restart so future requests are captured
     await this.page.startNetworkCapture();
+
+    // Stage 4: Component grouping
+    await groupComponents(graph, this.page.cdp);
+
+    // Stage 5: Semantic inference
+    await inferSemantics(graph, this.config);
 
     this.cachedGraph = graph;
 
@@ -249,7 +264,13 @@ export class VeilPage {
         );
       }
 
-      // 8. Update snapshot, notify listeners
+      // 8. Re-group components (Stage 4 incremental)
+      await regroupComponents(this.cachedGraph, this.page.cdp, changedNodeIds);
+
+      // 9. Re-infer semantics (Stage 5 heuristics only — preserves LLM labels)
+      reinferSemantics(this.cachedGraph);
+
+      // 10. Update snapshot, notify listeners
       this.lastSnapshot = newSnapshot;
 
       for (const listener of this.changeListeners) {
@@ -293,6 +314,11 @@ export class VeilPage {
 
 export class Veil {
   private browser: BrowserHandle | null = null;
+  private config?: VeilConfig;
+
+  constructor(config?: VeilConfig) {
+    this.config = config;
+  }
 
   async open(url: string): Promise<VeilPage> {
     if (!this.browser) {
@@ -301,7 +327,7 @@ export class Veil {
 
     const page = await connectToPage(this.browser.port);
     await page.navigate(url);
-    return new VeilPage(page, url);
+    return new VeilPage(page, url, this.config);
   }
 
   async close(): Promise<void> {

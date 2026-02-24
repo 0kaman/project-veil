@@ -10,6 +10,9 @@ export { serializeCompactText, serializeJGF } from "@veil/core";
 // Query + Display IDs
 export { queryNodes, buildDisplayIdRegistry, buildApiEndpoints } from "@veil/core";
 
+// Pipeline functions
+export { groupComponents, inferSemantics } from "@veil/core";
+
 // Types
 export type {
   BehaviorNode,
@@ -25,6 +28,9 @@ export type {
   GraphDiff,
   GraphChangeCallback,
   ApiEndpoint,
+  ComponentGroup,
+  SemanticLabel,
+  VeilConfig,
 } from "@veil/core";
 
 // SDK-specific types

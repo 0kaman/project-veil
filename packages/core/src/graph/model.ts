@@ -53,6 +53,33 @@ export interface EventBinding {
   estimatedEffect?: string;
 }
 
+export interface SemanticLabel {
+  category: string;    // 'auth', 'search', 'navigation', 'content', 'commerce', 'form', 'dynamic'
+  action: string;      // 'login', 'signup', 'search', 'primary', 'add-to-cart', 'submit'
+  confidence: number;  // 0-1
+  source: 'heuristic' | 'llm';
+}
+
+export interface ComponentGroup {
+  id: string;                              // "cg-react-searchbar" or "cg-vanilla-form-login"
+  framework: 'react' | 'vanilla' | 'unknown';
+  componentName: string;                   // "SearchBar", "LoginForm", "form-group-1"
+  props?: Record<string, unknown>;         // Serializable props (React only, max 10 primitive keys)
+  memberNodeIds: string[];                 // BehaviorNode IDs in this group
+  semanticLabel?: SemanticLabel;           // Populated by Stage 5
+}
+
+export interface VeilConfig {
+  llm?: {
+    enabled: boolean;
+    apiKey: string;
+    model?: string;               // default: "claude-sonnet-4-20250514"
+    baseUrl?: string;             // default: "https://api.anthropic.com"
+    maxTokens?: number;           // default: 4096
+    confidenceThreshold?: number; // default: 0.5 — LLM only consulted for labels below this
+  };
+}
+
 export interface BehaviorNode {
   id: string;
   role: string;
@@ -63,6 +90,8 @@ export interface BehaviorNode {
   backendDOMNodeId: number;
   children: string[];
   events: EventBinding[];
+  componentId?: string;
+  semanticLabel?: SemanticLabel;
 }
 
 export interface BehaviorGraph {
@@ -77,6 +106,7 @@ export interface BehaviorGraph {
   roots: string[];
   networkEdges: NetworkEdge[];
   apiEndpoints: ApiEndpoint[];
+  componentGroups: ComponentGroup[];
 }
 
 export interface GraphDiff {
@@ -102,6 +132,9 @@ export interface NodeFilter {
   name?: string | RegExp;
   hasEvent?: string;
   state?: Record<string, string | boolean>;
+  semanticCategory?: string;
+  semanticAction?: string;
+  componentId?: string;
 }
 
 export type VeilErrorCode =

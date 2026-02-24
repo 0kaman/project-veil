@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { Veil, serializeCompactText, serializeJGF } from "@veil/sdk";
-import type { InteractAction } from "@veil/sdk";
+import type { InteractAction, VeilConfig } from "@veil/sdk";
 
 const USAGE = `Usage:
-  veil decompose <url> [--timeout N] [--json]
+  veil decompose <url> [--timeout N] [--json] [--llm]
   veil interact <url> <nodeId> <action> [value]
 
 Commands:
@@ -14,6 +14,7 @@ Commands:
 Decompose options:
   --timeout N   Navigation timeout in seconds (default: 30)
   --json        Output in JSON Graph Format instead of compact text
+  --llm         Enable LLM enrichment for semantic labels (requires ANTHROPIC_API_KEY env)
 
 Interact actions:
   click         Click on the node
@@ -27,6 +28,7 @@ function parseDecomposeArgs(args: string[]): {
   url: string;
   timeout: number;
   json: boolean;
+  llm: boolean;
 } {
   if (!args[0] || args[0].startsWith("--")) {
     console.error("Error: URL is required\n");
@@ -41,10 +43,13 @@ function parseDecomposeArgs(args: string[]): {
 
   let timeout = 30;
   let json = false;
+  let llm = false;
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--json") {
       json = true;
+    } else if (args[i] === "--llm") {
+      llm = true;
     } else if (args[i] === "--timeout" && args[i + 1]) {
       timeout = parseInt(args[i + 1], 10);
       if (isNaN(timeout) || timeout <= 0) {
@@ -59,7 +64,7 @@ function parseDecomposeArgs(args: string[]): {
     }
   }
 
-  return { url, timeout, json };
+  return { url, timeout, json, llm };
 }
 
 function parseInteractArgs(args: string[]): {
@@ -137,7 +142,21 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const veil = new Veil();
+  // Build VeilConfig if --llm is used in decompose
+  let veilConfig: VeilConfig | undefined;
+  if (command === "decompose") {
+    const parsed = parseDecomposeArgs(commandArgs);
+    if (parsed.llm) {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        console.error("Error: --llm requires ANTHROPIC_API_KEY environment variable");
+        process.exit(1);
+      }
+      veilConfig = { llm: { enabled: true, apiKey } };
+    }
+  }
+
+  const veil = new Veil(veilConfig);
 
   const cleanup = async () => {
     await veil.close();

@@ -210,6 +210,7 @@ export function buildGraphFromAXTree(
     roots,
     networkEdges: [],
     apiEndpoints: [],
+    componentGroups: [],
   };
 }
 
