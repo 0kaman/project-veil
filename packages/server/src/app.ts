@@ -7,6 +7,7 @@ import { sessionRoutes } from "./routes/sessions.js";
 import { graphRoutes } from "./routes/graph.js";
 import { interactRoutes } from "./routes/interact.js";
 import { handleWsUpgrade } from "./ws.js";
+import { getVisualizerHtml } from "./visualizer.js";
 import type { ServerConfig } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
@@ -30,6 +31,9 @@ export function createApp(config: Partial<ServerConfig> = {}, veilConfig?: VeilC
     const ms = Date.now() - start;
     console.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
+
+  // Visualizer
+  app.get("/", (c) => c.html(getVisualizerHtml()));
 
   // Health check
   app.get("/health", (c) => c.json({ status: "ok" }));
