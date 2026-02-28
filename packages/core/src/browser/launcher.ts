@@ -33,6 +33,10 @@ export async function launchBrowser(): Promise<BrowserHandle> {
     "--disable-default-apps",
     "--disable-sync",
     "--metrics-recording-only",
+    // Stealth: avoid automation detection
+    "--disable-blink-features=AutomationControlled",
+    "--window-size=1920,1080",
+    "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "about:blank",
     `--user-data-dir=${userDataDir}`,
     "--remote-debugging-port=0",

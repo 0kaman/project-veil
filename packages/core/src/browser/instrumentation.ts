@@ -35,6 +35,22 @@ export interface InjectedRegistryData {
 export const INSTRUMENTATION_SCRIPT = `(function() {
   if (window.__veil) return;
 
+  // --- Stealth: mask automation signals ---
+  Object.defineProperty(navigator, 'webdriver', { get: function() { return false; } });
+  if (window.chrome && !window.chrome.runtime) {
+    window.chrome.runtime = { connect: function() {}, sendMessage: function() {} };
+  }
+  Object.defineProperty(navigator, 'languages', { get: function() { return ['en-US', 'en']; } });
+  Object.defineProperty(navigator, 'plugins', {
+    get: function() {
+      return [
+        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+      ];
+    }
+  });
+
   var listeners = [];
   var networkCalls = [];
   var navigations = [];
