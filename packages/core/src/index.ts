@@ -26,7 +26,7 @@ export { inferSemantics } from "./pipeline/stage-5-semantics.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
-import { waitForNetworkIdle } from "./browser/page.js";
+import { waitForNetworkIdle, waitForDomSettle } from "./browser/page.js";
 import { buildGraphFromAXTree, patchGraphFromDiff } from "./pipeline/stage-1-axtree.js";
 import { enrichGraphWithEvents, enrichSpecificNodesWithEvents } from "./pipeline/stage-2-events.js";
 import { correlateNetwork } from "./pipeline/stage-3-network.js";
@@ -47,6 +47,7 @@ export class VeilPage {
   private config?: VeilConfig;
   private cachedGraph: BehaviorGraph | null = null;
   private lastSnapshot: DiffableSnapshot | null = null;
+  private graphBuildPromise: Promise<BehaviorGraph> | null = null;
   private mutationWatcher: MutationWatcher | null = null;
   private changeListeners: Set<GraphChangeCallback> = new Set();
   private graphVersion = 0;
@@ -59,9 +60,21 @@ export class VeilPage {
     this.config = config;
   }
 
+  /** Public entry — deduplicates concurrent calls via shared promise. */
   async getGraph(): Promise<BehaviorGraph> {
     if (this.cachedGraph) return this.cachedGraph;
+    if (this.graphBuildPromise) return this.graphBuildPromise;
 
+    this.graphBuildPromise = this.buildGraph();
+    try {
+      return await this.graphBuildPromise;
+    } finally {
+      this.graphBuildPromise = null;
+    }
+  }
+
+  /** Full pipeline build — only called from getGraph(). */
+  private async buildGraph(): Promise<BehaviorGraph> {
     const [axNodes, title] = await Promise.all([
       this.page.getAXTree(),
       this.page.getTitle(),
@@ -102,28 +115,118 @@ export class VeilPage {
       throw new VeilError("NODE_NOT_FOUND", `Node "${nodeId}" not found in graph`);
     }
 
-    // Dispatch the interaction via CDP
-    await dispatchInteraction(this.page.cdp, node.backendDOMNodeId, action);
+    const prevUrl = this.url;
+    const prevNodeIds = new Set(graph.nodes.keys());
 
-    // Wait for network idle + DOM settle
-    await waitForNetworkIdle(this.page.cdp);
-    await sleep(100);
+    // Suppress mutation watcher — interact() owns the update cycle
+    this.mutationWatcher?.suppress();
 
-    // Update URL (may have navigated)
-    this.url = await this.page.getCurrentUrl();
+    // Navigation detector
+    let navigated = false;
+    const onNav = () => { navigated = true; };
+    this.page.cdp.on("Page.frameNavigated", onNav);
 
-    // Try incremental update first
     try {
-      const updated = await this.incrementalUpdate();
-      if (updated) return this.cachedGraph!;
-    } catch {
-      // Incremental failed — fall through to full rebuild
-    }
+      // Dispatch the interaction via CDP
+      await dispatchInteraction(this.page.cdp, node.backendDOMNodeId, action);
 
-    // Fallback: full rebuild
-    this.cachedGraph = null;
-    this.lastSnapshot = null;
-    return this.getGraph();
+      // Navigation-aware settle: wait for network idle OR frameNavigated,
+      // whichever comes first. Form POSTs with 302 redirects fire
+      // frameNavigated after the POST completes but before the new page
+      // finishes loading — we must not wait the full idle timeout.
+      await this.waitForSettleOrNavigation();
+
+      // Double-check: also detect navigation via URL change (catches cases
+      // where frameNavigated fired after the waits resolved)
+      if (!navigated) {
+        const currentUrl = await this.page.getCurrentUrl();
+        if (currentUrl !== prevUrl) {
+          navigated = true;
+        }
+      }
+
+      if (navigated) {
+        // Full-page navigation: wait for the new page to fully load
+        await new Promise<void>((resolve) => {
+          // loadEventFired may have already fired — check with a short
+          // grace period, then listen for it
+          const handler = () => {
+            this.page.cdp.off("Page.loadEventFired", handler);
+            clearTimeout(timer);
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            this.page.cdp.off("Page.loadEventFired", handler);
+            resolve();
+          }, 10_000);
+          this.page.cdp.on("Page.loadEventFired", handler);
+        });
+
+        // New page settle
+        await waitForNetworkIdle(this.page.cdp);
+        await waitForDomSettle(this.page.cdp);
+
+        // Re-enable DOM tracking for new document
+        await this.page.cdp.send("DOM.getDocument", { depth: -1 });
+
+        // Update URL + full rebuild
+        this.url = await this.page.getCurrentUrl();
+        this.cachedGraph = null;
+        this.lastSnapshot = null;
+        this.graphBuildPromise = null;
+        const newGraph = await this.getGraph();
+        this.notifyRebuild(prevNodeIds, newGraph);
+        return newGraph;
+      }
+
+      // Non-navigation path
+      this.url = await this.page.getCurrentUrl();
+
+      // Try incremental update first
+      try {
+        const updated = await this.incrementalUpdate();
+        if (updated) return this.cachedGraph!;
+      } catch {
+        // Incremental failed — fall through to full rebuild
+      }
+
+      // Fallback: full rebuild + notify listeners
+      this.cachedGraph = null;
+      this.lastSnapshot = null;
+      this.graphBuildPromise = null;
+      const newGraph = await this.getGraph();
+      this.notifyRebuild(prevNodeIds, newGraph);
+      return newGraph;
+    } finally {
+      this.page.cdp.off("Page.frameNavigated", onNav);
+      this.mutationWatcher?.unsuppress();
+    }
+  }
+
+  /**
+   * Wait for network idle + DOM settle, but abort early if a full-page
+   * navigation fires (Page.frameNavigated). This prevents the 2s idle
+   * timer from masking a form POST → 302 redirect sequence.
+   */
+  private waitForSettleOrNavigation(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        this.page.cdp.off("Page.frameNavigated", onNav);
+        resolve();
+      };
+
+      // If navigation fires, stop waiting — the old page is gone
+      const onNav = () => done();
+      this.page.cdp.on("Page.frameNavigated", onNav);
+
+      // Normal settle path
+      waitForNetworkIdle(this.page.cdp)
+        .then(() => waitForDomSettle(this.page.cdp))
+        .then(done);
+    });
   }
 
   onGraphChange(callback: GraphChangeCallback): () => void {
@@ -183,9 +286,25 @@ export class VeilPage {
       this.page.cdp,
       (reason) => {
         if (reason === "navigation") {
-          // Full-page navigation — force full rebuild
+          // Full-page navigation — rebuild graph for new page
+          const prevNodeIds = this.cachedGraph
+            ? new Set(this.cachedGraph.nodes.keys())
+            : new Set<string>();
           this.cachedGraph = null;
           this.lastSnapshot = null;
+
+          // Wait for new page to settle, re-enable DOM tracking, rebuild + notify
+          waitForNetworkIdle(this.page.cdp)
+            .then(() => waitForDomSettle(this.page.cdp))
+            .then(() => this.page.cdp.send("DOM.getDocument", { depth: -1 }))
+            .then(() => this.getGraph())
+            .then((newGraph) => this.notifyRebuild(prevNodeIds, newGraph))
+            .catch(() => {
+              // Rebuild failed — invalidate cache so next getGraph() retries
+              this.cachedGraph = null;
+              this.lastSnapshot = null;
+              this.graphBuildPromise = null;
+            });
           return;
         }
         // Debounced mutation or poll — run incremental update
@@ -298,6 +417,25 @@ export class VeilPage {
     }
   }
 
+  private notifyRebuild(prevNodeIds: Set<string>, newGraph: BehaviorGraph): void {
+    const newNodeIds = new Set(newGraph.nodes.keys());
+    const diff: GraphDiff = {
+      added: [...newNodeIds].filter((id) => !prevNodeIds.has(id)),
+      removed: [...prevNodeIds].filter((id) => !newNodeIds.has(id)),
+      modified: [...newNodeIds].filter((id) => prevNodeIds.has(id)),
+    };
+
+    if (diff.added.length === 0 && diff.removed.length === 0 && diff.modified.length === 0) return;
+
+    for (const listener of this.changeListeners) {
+      try {
+        listener(newGraph, diff);
+      } catch {
+        // Don't break the notification loop
+      }
+    }
+  }
+
   private resolveNode(graph: BehaviorGraph, nodeId: string): BehaviorNode | undefined {
     // Try direct internal AX ID first
     const direct = graph.nodes.get(nodeId);
@@ -338,6 +476,3 @@ export class Veil {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

@@ -1,6 +1,13 @@
 import type { CDPClient } from "./cdp-client.js";
 
-export type MutationCallback = (reason: "mutation" | "navigation" | "poll") => void;
+export type MutationReason = "mutation" | "navigation" | "poll";
+export type MutationCallback = (reason: MutationReason) => void;
+
+const REASON_PRIORITY: Record<MutationReason, number> = {
+  navigation: 3,
+  mutation: 2,
+  poll: 1,
+};
 
 export class MutationWatcher {
   private cdp: CDPClient;
@@ -11,6 +18,9 @@ export class MutationWatcher {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+
+  private suppressed = false;
+  private pendingReason: MutationReason | null = null;
 
   private onChildInserted: ((params: unknown) => void) | null = null;
   private onChildRemoved: ((params: unknown) => void) | null = null;
@@ -30,15 +40,54 @@ export class MutationWatcher {
     this.pollIntervalMs = pollIntervalMs;
   }
 
+  /** Suppress all callbacks. Remembers highest-priority reason for replay. */
+  suppress(): void {
+    this.suppressed = true;
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+      // A mutation was in-flight — buffer it so unsuppress() can replay
+      this.fireOrBuffer("mutation");
+    }
+  }
+
+  /** Unsuppress and replay the highest-priority pending reason (if any). */
+  unsuppress(): void {
+    this.suppressed = false;
+    const reason = this.pendingReason;
+    this.pendingReason = null;
+    if (reason && this.running) {
+      this.callback(reason);
+    }
+  }
+
+  private fireOrBuffer(reason: MutationReason): void {
+    if (this.suppressed) {
+      // Keep highest-priority reason
+      if (
+        !this.pendingReason ||
+        REASON_PRIORITY[reason] > REASON_PRIORITY[this.pendingReason]
+      ) {
+        this.pendingReason = reason;
+      }
+      return;
+    }
+    if (this.running) this.callback(reason);
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
 
     const debouncedMutation = () => {
+      if (this.suppressed) {
+        this.fireOrBuffer("mutation");
+        return;
+      }
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
         this.debounceTimer = null;
-        if (this.running) this.callback("mutation");
+        this.fireOrBuffer("mutation");
       }, this.debounceMs);
     };
 
@@ -52,7 +101,7 @@ export class MutationWatcher {
         clearTimeout(this.debounceTimer);
         this.debounceTimer = null;
       }
-      if (this.running) this.callback("navigation");
+      this.fireOrBuffer("navigation");
     };
 
     // SPA route changes
@@ -66,7 +115,7 @@ export class MutationWatcher {
 
     // Consistency poll — catches shadow DOM changes CDP misses
     this.pollTimer = setInterval(() => {
-      if (this.running) this.callback("poll");
+      this.fireOrBuffer("poll");
     }, this.pollIntervalMs);
   }
 

@@ -144,6 +144,40 @@ export async function connectToPage(
   };
 }
 
+/**
+ * Wait until no DOM mutation events have been received for `quietMs`.
+ * Hard cap at `maxMs` to avoid infinite waits on rapid mutations.
+ */
+export function waitForDomSettle(cdp: CDPClient, quietMs = 150, maxMs = 2_000): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const reset = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(done, quietMs);
+    };
+
+    const done = () => {
+      cdp.off("DOM.childNodeInserted", reset);
+      cdp.off("DOM.childNodeRemoved", reset);
+      cdp.off("DOM.attributeModified", reset);
+      if (timer) clearTimeout(timer);
+      clearTimeout(hardCap);
+      resolve();
+    };
+
+    cdp.on("DOM.childNodeInserted", reset);
+    cdp.on("DOM.childNodeRemoved", reset);
+    cdp.on("DOM.attributeModified", reset);
+
+    // If DOM is already quiet, resolve after quietMs
+    timer = setTimeout(done, quietMs);
+
+    // Hard cap to prevent infinite waiting
+    const hardCap = setTimeout(done, maxMs);
+  });
+}
+
 export async function waitForNetworkIdle(cdp: CDPClient): Promise<void> {
   let inflight = 0;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;

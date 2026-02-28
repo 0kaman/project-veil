@@ -12,6 +12,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist"
   }
 }

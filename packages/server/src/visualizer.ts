@@ -445,7 +445,7 @@ function renderTree(parsed, diffOpts) {
   var nodeEnter = nodeSel.enter().append('g').attr('class', 'node')
     .attr('transform', function (d) { return 'translate(' + d.x + ',' + d.y + ')'; })
     .style('opacity', 0)
-    .on('click', function (evt, d) { evt.stopPropagation(); selectNode(d.data.id, parsed); });
+    .on('click', function (evt, d) { evt.stopPropagation(); selectNode(d.data.id); });
 
   nodeEnter.append('rect').attr('rx', 6).attr('ry', 6)
     .attr('x', -72).attr('y', -18).attr('width', 144).attr('height', 36)
@@ -571,10 +571,10 @@ function renderTriggerArcs(parsed) {
 }
 
 // ── Node detail ──
-function selectNode(nodeId, parsed) {
+function selectNode(nodeId) {
   selectedNodeId = nodeId;
   nodesGroup.selectAll('g.node').classed('selected', function (d) { return d.data.id === nodeId; });
-  showNodeDetail(nodeId, parsed);
+  showNodeDetail(nodeId, currentParsed);
 }
 
 function showNodeDetail(nodeId, parsed) {
@@ -722,8 +722,30 @@ function interactWithNode(nodeId, action) {
     if (!resp.ok) return resp.json().then(function (e) { throw new Error(e.error ? e.error.message : 'HTTP ' + resp.status); });
     return resp.json();
   })
-  .then(function () {
+  .then(function (data) {
     if (fb) { fb.className = 'feedback-ok'; fb.textContent = action.action + ' successful'; }
+    // Render the updated graph from the interact response directly
+    if (data && data.graph) {
+      var prevNodes = currentParsed ? Object.keys(currentParsed.nodes) : [];
+      var prevSet = {};
+      prevNodes.forEach(function (id) { prevSet[id] = true; });
+      currentParsed = parseGraph(data);
+      currentVersion = currentParsed.version;
+      var newIds = Object.keys(currentParsed.nodes);
+      var diffOpts = {
+        added: new Set(newIds.filter(function (id) { return !prevSet[id]; })),
+        removed: new Set(prevNodes.filter(function (id) { return !currentParsed.nodes[id]; })),
+        modified: new Set(newIds.filter(function (id) { return prevSet[id]; })),
+      };
+      renderTree(currentParsed, diffOpts);
+      renderTriggerArcs(currentParsed);
+      updateStats(currentParsed);
+      // If selected node was removed, clear selection text (but don't rebuild panel)
+      if (selectedNodeId && !currentParsed.nodes[selectedNodeId]) {
+        selectedNodeId = null;
+        detailContent.innerHTML = '<div class="placeholder">Node removed after interaction</div>';
+      }
+    }
   })
   .catch(function (err) {
     if (fb) { fb.className = 'feedback-err'; fb.textContent = err.message; }
