@@ -46,8 +46,10 @@ export async function startServer(config: Partial<ServerConfig> = {}): Promise<v
   process.on("SIGTERM", shutdown);
 }
 
-// Run as standalone
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/^.*\//, ""));
+// Run as standalone — use full path comparison to avoid false matches when bundled
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isMain) {
   startServer().catch((err) => {
     console.error("Failed to start server:", err);
