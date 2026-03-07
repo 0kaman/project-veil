@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Veil — Product Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #06080c;
+    --bg-surface: #0c1018;
+    --bg-elevated: #121822;
+    --bg-card: #161e2c;
+    --border: #1e2a3a;
+    --border-glow: #2a3a52;
+    --text-primary: #e8ecf2;
+    --text-secondary: #8494a7;
+    --text-muted: #4a5a6f;
+    --accent-cyan: #00e5ff;
+    --accent-cyan-dim: #00e5ff22;
+    --accent-blue: #4d7cff;
+    --accent-violet: #9b6dff;
+    --accent-emerald: #00e89d;
+    --accent-amber: #ffb84d;
+    --accent-rose: #ff6b8a;
+    --accent-cyan-glow: 0 0 30px #00e5ff33, 0 0 60px #00e5ff11;
+    --font-display: 'Instrument Serif', Georgia, serif;
+    --font-body: 'DM Sans', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-glow) transparent;
+  }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  /* ── Grain overlay ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ── Ambient glow blobs ── */
+  .ambient {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .ambient-1 {
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, #00e5ff08 0%, transparent 70%);
+    top: -200px; left: -100px;
+    animation: drift 20s ease-in-out infinite;
+  }
+  .ambient-2 {
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, #9b6dff06 0%, transparent 70%);
+    bottom: -100px; right: -100px;
+    animation: drift 25s ease-in-out infinite reverse;
+  }
+  .ambient-3 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, #00e89d05 0%, transparent 70%);
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: drift 30s ease-in-out infinite;
+  }
+
+  @keyframes drift {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(30px, -20px); }
+    50% { transform: translate(-20px, 30px); }
+    75% { transform: translate(20px, 20px); }
+  }
+
+  /* ── Layout ── */
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 40px;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 100px 0 60px;
+    text-align: center;
+    position: relative;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-cyan);
+    margin-bottom: 32px;
+    animation: fadeUp 0.8s ease-out both;
+  }
+  .hero-badge::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--accent-cyan);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent-cyan);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .hero h1 {
+    font-family: var(--font-display);
+    font-size: clamp(52px, 7vw, 96px);
+    font-weight: 400;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    animation: fadeUp 0.8s 0.1s ease-out both;
+  }
+  .hero h1 em {
+    font-style: italic;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue), var(--accent-violet));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-sub {
+    font-size: 18px;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin: 24px auto 0;
+    line-height: 1.6;
+    animation: fadeUp 0.8s 0.2s ease-out both;
+  }
+
+  .hero-sub code {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--accent-cyan);
+    background: var(--accent-cyan-dim);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Section headers ── */
+  .section {
+    padding: 80px 0;
+    position: relative;
+  }
+
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 4vw, 48px);
+    font-weight: 400;
+    line-height: 1.15;
+    margin-bottom: 16px;
+  }
+
+  .section-desc {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 560px;
+    line-height: 1.6;
+    margin-bottom: 48px;
+  }
+
+  /* ── Architecture Flow ── */
+  .arch-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+    padding: 24px 0;
+  }
+
+  .arch-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 24px 20px;
+    min-width: 140px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    position: relative;
+    transition: all 0.3s ease;
+    cursor: default;
+  }
+  .arch-node:hover {
+    border-color: var(--accent-cyan);
+    box-shadow: var(--accent-cyan-glow);
+    transform: translateY(-4px);
+  }
+  .arch-node:hover .arch-icon { transform: scale(1.1); }
+
+  .arch-icon {
+    width: 44px; height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    font-size: 22px;
+    transition: transform 0.3s ease;
+  }
+
+  .arch-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: center;
+  }
+
+  .arch-sublabel {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+    font-family: var(--font-mono);
+  }
+
+  .arch-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    position: relative;
+  }
+  .arch-arrow svg { width: 32px; height: 16px; }
+  .arch-arrow .flow-line {
+    stroke: var(--border-glow);
+    stroke-width: 2;
+    stroke-dasharray: 6 4;
+    animation: flowDash 1.5s linear infinite;
+  }
+  .arch-arrow .flow-head {
+    fill: var(--text-muted);
+  }
+
+  @keyframes flowDash {
+    to { stroke-dashoffset: -20; }
+  }
+
+  /* ── Pipeline ── */
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    counter-reset: stage;
+  }
+
+  .pipeline-stage {
+    background: var(--bg-card);
+    padding: 28px 20px;
+    position: relative;
+    counter-increment: stage;
+    transition: all 0.4s ease;
+    cursor: default;
+    overflow: hidden;
+  }
+  .pipeline-stage::before {
+    content: counter(stage);
+    position: absolute;
+    top: 16px; right: 16px;
+    font-family: var(--font-display);
+    font-size: 48px;
+    font-style: italic;
+    color: var(--text-primary);
+    opacity: 0.04;
+    line-height: 1;
+    transition: opacity 0.4s ease;
+  }
+  .pipeline-stage:hover::before { opacity: 0.1; }
+  .pipeline-stage:hover {
+    background: var(--bg-elevated);
+  }
+  .pipeline-stage:hover .stage-bar { transform: scaleX(1); }
+
+  .stage-icon-wrap {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    font-size: 18px;
+  }
+
+  .stage-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+  }
+
+  .stage-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .stage-detail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    line-height: 1.7;
+  }
+
+  .stage-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s ease;
+  }
+
+  .s1 .stage-icon-wrap { background: #00e5ff15; }
+  .s1 .stage-name { color: var(--accent-cyan); }
+  .s1 .stage-bar { background: var(--accent-cyan); }
+
+  .s2 .stage-icon-wrap { background: #4d7cff15; }
+  .s2 .stage-name { color: var(--accent-blue); }
+  .s2 .stage-bar { background: var(--accent-blue); }
+
+  .s3 .stage-icon-wrap { background: #9b6dff15; }
+  .s3 .stage-name { color: var(--accent-violet); }
+  .s3 .stage-bar { background: var(--accent-violet); }
+
+  .s4 .stage-icon-wrap { background: #00e89d15; }
+  .s4 .stage-name { color: var(--accent-emerald); }
+  .s4 .stage-bar { background: var(--accent-emerald); }
+
+  .s5 .stage-icon-wrap { background: #ffb84d15; }
+  .s5 .stage-name { color: var(--accent-amber); }
+  .s5 .stage-bar { background: var(--accent-amber); }
+
+  /* Pipeline connector arrows */
+  .pipeline-connectors {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    margin-bottom: 2px;
+  }
+  .pipeline-connectors .conn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 24px;
+    position: relative;
+  }
+  .pipeline-connectors .conn::after {
+    content: '→';
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-muted);
+    position: absolute;
+    right: -7px;
+  }
+  .pipeline-connectors .conn:last-child::after { display: none; }
+
+  /* ── Session Flow ── */
+  .session-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+    max-width: 720px;
+  }
+
+  .session-flow::before {
+    content: '';
+    position: absolute;
+    left: 19px;
+    top: 40px;
+    bottom: 20px;
+    width: 2px;
+    background: repeating-linear-gradient(
+      to bottom,
+      var(--border-glow) 0px,
+      var(--border-glow) 6px,
+      transparent 6px,
+      transparent 12px
+    );
+    animation: flowDown 2s linear infinite;
+  }
+  @keyframes flowDown {
+    to { background-position: 0 24px; }
+  }
+
+  .session-step {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    padding: 16px 0;
+    position: relative;
+  }
+
+  .step-dot {
+    width: 40px; height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    border: 2px solid var(--border);
+    background: var(--bg-deep);
+    position: relative;
+    z-index: 2;
+    transition: all 0.3s ease;
+  }
+  .session-step:hover .step-dot {
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 16px #00e5ff33;
+  }
+
+  .step-content {
+    flex: 1;
+    padding-top: 6px;
+  }
+
+  .step-cmd {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .step-cmd .kw { color: var(--accent-cyan); }
+  .step-cmd .arg { color: var(--accent-amber); }
+  .step-cmd .val { color: var(--accent-emerald); }
+
+  .step-output {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    margin-top: 8px;
+    white-space: pre;
+    line-height: 1.6;
+    overflow-x: auto;
+  }
+  .step-output .highlight { color: var(--accent-cyan); }
+  .step-output .success { color: var(--accent-emerald); }
+
+  .step-note {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  /* ── Stats grid ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 40px;
+  }
+
+  .stat-card {
+    background: var(--bg-card);
+    padding: 32px 24px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card:hover {
+    background: var(--bg-elevated);
+  }
+  .stat-card:hover .stat-number {
+    transform: scale(1.05);
+  }
+
+  .stat-number {
+    font-family: var(--font-display);
+    font-size: 56px;
+    font-weight: 400;
+    font-style: italic;
+    line-height: 1;
+    margin-bottom: 8px;
+    transition: transform 0.3s ease;
+  }
+
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .stat-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+  }
+
+  /* ── Test breakdown ── */
+  .test-breakdown {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .test-pkg {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    transition: all 0.3s ease;
+    cursor: default;
+  }
+  .test-pkg:hover {
+    border-color: var(--border-glow);
+    background: var(--bg-card);
+  }
+
+  .test-pkg-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .test-pkg-name::before {
+    content: '';
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  .test-pkg.core .test-pkg-name { color: var(--accent-cyan); }
+  .test-pkg.core .test-pkg-name::before { background: var(--accent-cyan); }
+  .test-pkg.server .test-pkg-name { color: var(--accent-violet); }
+  .test-pkg.server .test-pkg-name::before { background: var(--accent-violet); }
+  .test-pkg.cli .test-pkg-name { color: var(--accent-emerald); }
+  .test-pkg.cli .test-pkg-name::before { background: var(--accent-emerald); }
+
+  .test-bar-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .test-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    animation: barFill 1.5s ease-out both;
+  }
+  @keyframes barFill {
+    from { width: 0%; }
+  }
+
+  .core .test-bar-fill { background: var(--accent-cyan); width: 75.6%; }
+  .server .test-bar-fill { background: var(--accent-violet); width: 16%; }
+  .cli .test-bar-fill { background: var(--accent-emerald); width: 8.4%; }
+
+  .test-file-list {
+    list-style: none;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 2;
+  }
+  .test-file-list .count {
+    color: var(--text-secondary);
+    float: right;
+  }
+
+  /* ── CLI Commands ── */
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .cmd-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all 0.3s ease;
+    cursor: default;
+  }
+  .cmd-card:hover {
+    border-color: var(--border-glow);
+    background: var(--bg-card);
+  }
+
+  .cmd-card-icon {
+    font-size: 16px;
+    width: 32px; height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-elevated);
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .cmd-card-body { flex: 1; }
+
+  .cmd-syntax {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .cmd-syntax .kw { color: var(--accent-cyan); }
+  .cmd-syntax .ph { color: var(--text-muted); }
+
+  .cmd-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  /* ── Transformation Funnel ── */
+  .funnel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .funnel-stage {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 24px;
+    align-items: start;
+    padding: 24px 0;
+    position: relative;
+  }
+  .funnel-stage + .funnel-stage {
+    border-top: 1px solid var(--border);
+  }
+
+  .funnel-meta {
+    text-align: right;
+    padding-top: 4px;
+  }
+
+  .funnel-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .funnel-count {
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-style: italic;
+    line-height: 1.1;
+  }
+
+  .funnel-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    margin-top: 2px;
+  }
+
+  .funnel-content {
+    position: relative;
+    padding-left: 24px;
+    border-left: 2px solid var(--border);
+  }
+
+  .funnel-code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .funnel-code .tag { color: var(--accent-rose); }
+  .funnel-code .attr { color: var(--accent-amber); }
+  .funnel-code .str { color: var(--accent-emerald); }
+  .funnel-code .kw { color: var(--accent-cyan); }
+  .funnel-code .dim { color: var(--text-muted); }
+  .funnel-code .role { color: var(--accent-violet); }
+  .funnel-code .id { color: var(--accent-blue); }
+  .funnel-code .ev { color: var(--accent-rose); }
+  .funnel-code .net { color: var(--accent-amber); }
+  .funnel-code .sem { color: var(--accent-emerald); }
+
+  .funnel-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    gap: 8px;
+  }
+  .funnel-arrow::before, .funnel-arrow::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+  }
+
+  .funnel-reduction {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--accent-emerald);
+  }
+
+  /* ── Side-by-side comparison ── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 48px;
+  }
+
+  .compare-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  .compare-panel:hover {
+    border-color: var(--border-glow);
+  }
+
+  .compare-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .compare-header .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  .compare-body {
+    padding: 16px 18px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    white-space: pre;
+    overflow-x: auto;
+    background: var(--bg-surface);
+    min-height: 160px;
+  }
+
+  /* ── Internal mechanics ── */
+  .mechanics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .mechanic-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    transition: all 0.4s ease;
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+  }
+  .mechanic-card:hover {
+    border-color: var(--border-glow);
+    background: var(--bg-card);
+  }
+  .mechanic-card:hover .mechanic-icon { transform: scale(1.1); }
+
+  .mechanic-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-bottom: 18px;
+    transition: transform 0.3s ease;
+  }
+
+  .mechanic-title {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+  }
+
+  .mechanic-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 14px;
+  }
+
+  .mechanic-detail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.8;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .mechanic-detail code {
+    color: var(--accent-cyan);
+    background: var(--accent-cyan-dim);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+
+  /* ── Two-column layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 60px;
+    align-items: start;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    padding: 60px 0;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  .footer-text {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 2;
+  }
+
+  .footer-text a {
+    color: var(--accent-cyan);
+    text-decoration: none;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 0;
+  }
+
+  /* ── Scroll reveal ── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 1024px) {
+    .pipeline { grid-template-columns: repeat(3, 1fr); }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .two-col { grid-template-columns: 1fr; gap: 32px; }
+    .test-breakdown { grid-template-columns: 1fr; }
+    .cmd-grid { grid-template-columns: 1fr; }
+    .mechanics-grid { grid-template-columns: 1fr; }
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .container { padding: 0 20px; }
+    .hero { padding: 60px 0 40px; }
+    .pipeline { grid-template-columns: 1fr 1fr; }
+    .arch-flow { flex-direction: column; gap: 8px; }
+    .arch-arrow { transform: rotate(90deg); }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .funnel-stage { grid-template-columns: 1fr; gap: 12px; }
+    .funnel-meta { text-align: left; }
+    .funnel-content { border-left: none; padding-left: 0; border-top: 2px solid var(--border); padding-top: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient ambient-1"></div>
+<div class="ambient ambient-2"></div>
+<div class="ambient ambient-3"></div>
+
+<!-- ════════════════════ HERO ════════════════════ -->
+<header class="hero">
+  <div class="container">
+    <div class="hero-badge">Active Development</div>
+    <h1>Project <em>Veil</em></h1>
+    <p class="hero-sub">
+      An AI-first browser that decomposes webpages into <code>Behavior Graphs</code> —
+      so LLMs can see, understand, and interact with the web.
+    </p>
+  </div>
+</header>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ════════════════════ ARCHITECTURE ════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">01 — Architecture</div>
+      <div class="section-title">From LLM tool call to browser action</div>
+      <p class="section-desc">
+        The CLI is a thin HTTP client. A background daemon holds Chromium sessions alive
+        across CLI invocations — enabling multi-step workflows like login flows.
+      </p>
+    </div>
+
+    <div class="arch-flow reveal">
+      <div class="arch-node">
+        <div class="arch-icon" style="background:#9b6dff15;">🤖</div>
+        <div class="arch-label">LLM Agent</div>
+        <div class="arch-sublabel">tool calls</div>
+      </div>
+      <div class="arch-arrow">
+        <svg viewBox="0 0 32 16"><line class="flow-line" x1="0" y1="8" x2="24" y2="8"/><polygon class="flow-head" points="24,4 32,8 24,12"/></svg>
+      </div>
+      <div class="arch-node">
+        <div class="arch-icon" style="background:#00e5ff15;">⌨</div>
+        <div class="arch-label">CLI</div>
+        <div class="arch-sublabel">veil open / do / graph</div>
+      </div>
+      <div class="arch-arrow">
+        <svg viewBox="0 0 32 16"><line class="flow-line" x1="0" y1="8" x2="24" y2="8"/><polygon class="flow-head" points="24,4 32,8 24,12"/></svg>
+      </div>
+      <div class="arch-node">
+        <div class="arch-icon" style="background:#00e89d15;">⚙</div>
+        <div class="arch-label">Daemon</div>
+        <div class="arch-sublabel">auto-start, PID file</div>
+      </div>
+      <div class="arch-arrow">
+        <svg viewBox="0 0 32 16"><line class="flow-line" x1="0" y1="8" x2="24" y2="8"/><polygon class="flow-head" points="24,4 32,8 24,12"/></svg>
+      </div>
+      <div class="arch-node">
+        <div class="arch-icon" style="background:#4d7cff15;">🌐</div>
+        <div class="arch-label">Server</div>
+        <div class="arch-sublabel">REST + WebSocket</div>
+      </div>
+      <div class="arch-arrow">
+        <svg viewBox="0 0 32 16"><line class="flow-line" x1="0" y1="8" x2="24" y2="8"/><polygon class="flow-head" points="24,4 32,8 24,12"/></svg>
+      </div>
+      <div class="arch-node">
+        <div class="arch-icon" style="background:#ffb84d15;">🔍</div>
+        <div class="arch-label">Chromium</div>
+        <div class="arch-sublabel">headless, CDP</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ════════════════════ PIPELINE ════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">02 — Decomposition Pipeline</div>
+      <div class="section-title">5 stages, from raw DOM to semantic meaning</div>
+      <p class="section-desc">
+        Every webpage passes through five pipeline stages.
+        3K–10K DOM nodes collapse into 50–300 meaningful behavior nodes.
+      </p>
+    </div>
+
+    <div class="pipeline reveal">
+      <div class="pipeline-stage s1">
+        <div class="stage-icon-wrap">🌳</div>
+        <div class="stage-name">AXTree</div>
+        <div class="stage-desc">Extract accessibility tree via CDP, filter to interactive &amp; container roles</div>
+        <div class="stage-detail">
+          shouldKeep() → 22 interactive roles<br>
+          extractState() → 15 ARIA props<br>
+          3K nodes → ~200 kept
+        </div>
+        <div class="stage-bar"></div>
+      </div>
+
+      <div class="pipeline-stage s2">
+        <div class="stage-icon-wrap">⚡</div>
+        <div class="stage-name">Events</div>
+        <div class="stage-desc">Discover event handlers via CDP Debugger, classify effects</div>
+        <div class="stage-detail">
+          React Fiber tree traversal<br>
+          __reactFiber$ introspection<br>
+          click, submit, change, blur...
+        </div>
+        <div class="stage-bar"></div>
+      </div>
+
+      <div class="pipeline-stage s3">
+        <div class="stage-icon-wrap">📡</div>
+        <div class="stage-name">Network</div>
+        <div class="stage-desc">Correlate network requests to triggering nodes via stack traces</div>
+        <div class="stage-detail">
+          Initiator stack → node matching<br>
+          URL pattern inference: /api/{id}<br>
+          JSON body shape extraction
+        </div>
+        <div class="stage-bar"></div>
+      </div>
+
+      <div class="pipeline-stage s4">
+        <div class="stage-icon-wrap">📦</div>
+        <div class="stage-name">Components</div>
+        <div class="stage-desc">Group nodes into logical components — React detection + vanilla heuristics</div>
+        <div class="stage-detail">
+          React: Fiber → component name<br>
+          Vanilla: container + shared handler<br>
+          Form, nav, dialog grouping
+        </div>
+        <div class="stage-bar"></div>
+      </div>
+
+      <div class="pipeline-stage s5">
+        <div class="stage-icon-wrap">🧠</div>
+        <div class="stage-name">Semantics</div>
+        <div class="stage-desc">Infer purpose — 8 heuristic rules + optional LLM enrichment</div>
+        <div class="stage-detail">
+          auth:login, search:input<br>
+          commerce:add-to-cart<br>
+          LLM labels override heuristic
+        </div>
+        <div class="stage-bar"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ════════════════════ HOW AI SEES THE WEB ════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">03 — How AI Sees the Web</div>
+      <div class="section-title">From pixels to behavior nodes</div>
+      <p class="section-desc">
+        Humans see rendered pixels. LLMs can't. Veil transforms the visual page into a
+        structured behavior graph — showing only what matters: interactive elements,
+        their state, what they trigger, and what APIs they call.
+      </p>
+    </div>
+
+    <!-- Side-by-side: What humans see vs what AI receives -->
+    <div class="compare-grid reveal">
+      <div class="compare-panel">
+        <div class="compare-header">
+          <div class="dot" style="background: var(--accent-rose);"></div>
+          What humans see — rendered pixels
+        </div>
+        <div class="compare-body" style="color: var(--text-muted); font-size: 12px; font-family: var(--font-body); white-space: normal; line-height: 1.8; padding: 24px;">
+          <div style="text-align: center; padding: 20px 0 16px;">
+            <div style="font-family: var(--font-display); font-size: 24px; color: var(--text-primary); margin-bottom: 12px;">Sign In</div>
+            <div style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin: 8px auto; max-width: 240px; text-align: left; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">username or email</div>
+            <div style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin: 8px auto; max-width: 240px; text-align: left; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">password</div>
+            <div style="background: var(--accent-blue); border-radius: 6px; padding: 10px 14px; margin: 12px auto; max-width: 240px; font-family: var(--font-mono); font-size: 12px; color: white; cursor: default;">Log In</div>
+            <div style="font-size: 11px; color: var(--accent-blue); margin-top: 8px;">Forgot password?</div>
+          </div>
+          <div style="text-align: center; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 8px;">+ 3000 invisible DOM nodes, CSS, fonts, images...</div>
+        </div>
+      </div>
+      <div class="compare-panel">
+        <div class="compare-header">
+          <div class="dot" style="background: var(--accent-cyan);"></div>
+          What the LLM receives — compact text
+        </div>
+        <div class="compare-body"><span class="kw">PAGE</span> https://example.com/login <span class="str">"Sign In"</span>
+<span class="kw">STATE</span> idle 0.8s
+
+<span class="kw">NODES</span>
+  <span class="id">textbox-username</span> [<span class="role">textbox</span>] <span class="str">"Username or email"</span>
+    <span class="ev">→ change</span>  <span class="sem">{auth:input}</span>
+  <span class="id">textbox-password</span> [<span class="role">textbox</span>] <span class="str">"Password"</span>
+    <span class="ev">→ change</span>  <span class="sem">{auth:input}</span>
+  <span class="id">button-log-in</span> [<span class="role">button</span>] <span class="str">"Log In"</span>
+    <span class="ev">→ click</span>  <span class="sem">{auth:login}</span>
+  <span class="id">link-forgot-password</span> [<span class="role">link</span>] <span class="str">"Forgot?"</span>
+    <span class="ev">→ click → navigate</span>
+
+<span class="kw">NETWORK</span>
+  <span class="net">POST /api/auth/login</span> ← <span class="id">button-log-in</span>
+    body: <span class="dim">{username: string, password: string}</span>
+
+<span class="kw">COMPONENTS</span>
+  <span class="sem">LoginForm</span> → textbox-username, textbox-password, button-log-in</div>
+      </div>
+    </div>
+
+    <!-- Transformation funnel -->
+    <div style="margin-bottom: 16px;">
+      <div class="section-label reveal" style="margin-bottom: 24px;">The reduction funnel</div>
+    </div>
+
+    <div class="funnel reveal">
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--text-muted);">Raw Source</div>
+          <div class="funnel-count" style="color: var(--text-muted);">~50K</div>
+          <div class="funnel-sub">lines of HTML</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="dim">&lt;!-- What the browser downloads --&gt;</span>
+<span class="tag">&lt;html&gt;</span>
+  <span class="tag">&lt;head&gt;</span> <span class="dim">...meta, CSS, scripts...</span> <span class="tag">&lt;/head&gt;</span>
+  <span class="tag">&lt;body&gt;</span>
+    <span class="tag">&lt;div</span> <span class="attr">id</span>=<span class="str">"root"</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;div</span> <span class="attr">class</span>=<span class="str">"css-1dbjc4n r-1awozwy..."</span><span class="tag">&gt;</span>
+        <span class="tag">&lt;div</span> <span class="attr">class</span>=<span class="str">"css-1dbjc4n r-18u37iz..."</span><span class="tag">&gt;</span>
+          <span class="dim">...3000+ nested divs...</span></div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow">
+        <span class="funnel-reduction">CDP: Accessibility.getFullAXTree()</span>
+      </div>
+
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--accent-cyan);">AXTree</div>
+          <div class="funnel-count" style="color: var(--accent-cyan);">3K–10K</div>
+          <div class="funnel-sub">accessibility nodes</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="dim">// Chrome's accessibility tree — every DOM node gets one</span>
+{ <span class="attr">nodeId</span>: <span class="str">"284"</span>, <span class="role">role</span>: <span class="str">"textbox"</span>,
+  <span class="attr">name</span>: <span class="str">"Phone number, username, or email"</span>,
+  <span class="attr">properties</span>: [{ <span class="attr">name</span>: <span class="str">"focusable"</span>, <span class="attr">value</span>: <span class="kw">true</span> }] }
+{ <span class="attr">nodeId</span>: <span class="str">"285"</span>, <span class="role">role</span>: <span class="str">"generic"</span>, <span class="dim">← filtered out</span> }
+{ <span class="attr">nodeId</span>: <span class="str">"286"</span>, <span class="role">role</span>: <span class="str">"generic"</span>, <span class="dim">← filtered out</span> }
+{ <span class="attr">nodeId</span>: <span class="str">"287"</span>, <span class="role">role</span>: <span class="str">"button"</span>,
+  <span class="attr">name</span>: <span class="str">"Log In"</span>,
+  <span class="attr">properties</span>: [{ <span class="attr">name</span>: <span class="str">"focusable"</span>, <span class="attr">value</span>: <span class="kw">true</span> }] }</div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow">
+        <span class="funnel-reduction">shouldKeep() → 22 interactive roles only</span>
+      </div>
+
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--accent-blue);">Filtered</div>
+          <div class="funnel-count" style="color: var(--accent-blue);">50–300</div>
+          <div class="funnel-sub">behavior nodes</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="dim">// Only interactive + container roles survive</span>
+<span class="kw">KEPT</span>: textbox, button, link, checkbox, radio,
+      combobox, slider, switch, tab, menuitem,
+      heading, img, navigation, dialog, alert...
+<span class="kw">DROPPED</span>: generic, none, InlineTextBox, paragraph,
+         LineBreak, StaticText, Section... <span class="dim">(95% of nodes)</span></div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow">
+        <span class="funnel-reduction">Events + Network + Components + Semantics</span>
+      </div>
+
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--accent-emerald);">Compact Text</div>
+          <div class="funnel-count" style="color: var(--accent-emerald);">~40</div>
+          <div class="funnel-sub">lines for LLM</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="kw">PAGE</span> https://instagram.com <span class="str">"Instagram"</span>
+<span class="kw">STATE</span> idle 1.2s
+
+<span class="kw">NODES</span>
+  <span class="id">textbox-username</span> [<span class="role">textbox</span>] <span class="str">"Phone number, username, or email"</span>
+    <span class="ev">→ change</span>  <span class="sem">{auth:input}</span>
+  <span class="id">textbox-password</span> [<span class="role">textbox</span>] <span class="str">"Password"</span>  focused
+    <span class="ev">→ change</span>  <span class="sem">{auth:input}</span>
+  <span class="id">button-log-in</span> [<span class="role">button</span>] <span class="str">"Log in"</span>
+    <span class="ev">→ click</span>  <span class="sem">{auth:login}</span>
+  <span class="id">link-forgot-password</span> [<span class="role">link</span>] <span class="str">"Forgot password?"</span>
+    <span class="ev">→ click → navigate</span>  <span class="sem">{auth:recover}</span>
+
+<span class="kw">APIS</span>
+  <span class="net">POST /api/v1/web/accounts/login/ajax/</span>
+    body: <span class="dim">{username, enc_password, optIntoOneTap}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 32px;" class="reveal">
+      <div class="funnel-reduction" style="font-size: 13px; padding: 8px 20px;">
+        50,000 lines → 40 lines · <span style="color: var(--accent-cyan);">99.9% reduction</span> · zero information loss for actions
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ════════════════════ INSIDE THE ENGINE ════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">04 — Inside the Engine</div>
+      <div class="section-title">How the pieces connect under the hood</div>
+      <p class="section-desc">
+        Raw Chrome DevTools Protocol. No Playwright. No Puppeteer.
+        Direct CDP commands give us fine-grained control over every aspect of the browser.
+      </p>
+    </div>
+
+    <div class="mechanics-grid reveal">
+      <div class="mechanic-card">
+        <div class="mechanic-icon" style="background: #00e5ff15;">🔌</div>
+        <div class="mechanic-title">CDP Connection</div>
+        <div class="mechanic-desc">
+          Direct WebSocket to Chromium's DevTools Protocol. We subscribe to domains
+          individually — only enabling what each pipeline stage needs.
+        </div>
+        <div class="mechanic-detail">
+          <code>Accessibility.getFullAXTree</code> → Stage 1<br>
+          <code>Debugger.enable</code> → Stage 2 events<br>
+          <code>Network.enable</code> → Stage 3 correlation<br>
+          <code>Runtime.evaluate</code> → React Fiber walk<br>
+          <code>DOM.getDocument</code> → mutation root
+        </div>
+      </div>
+
+      <div class="mechanic-card">
+        <div class="mechanic-icon" style="background: #4d7cff15;">⚡</div>
+        <div class="mechanic-title">Event Discovery</div>
+        <div class="mechanic-desc">
+          Finding what a button actually does. React uses event delegation — one listener
+          on the root. We traverse the Fiber tree to find real component handlers.
+        </div>
+        <div class="mechanic-detail">
+          DOM node → <code>__reactFiber$</code> property<br>
+          Walk Fiber.memoizedProps → <code>onClick</code><br>
+          Classify: navigation, state change, API call<br>
+          Vanilla: <code>getEventListeners()</code> CDP<br>
+          Result: edges connecting nodes to effects
+        </div>
+      </div>
+
+      <div class="mechanic-card">
+        <div class="mechanic-icon" style="background: #9b6dff15;">📡</div>
+        <div class="mechanic-title">Network Correlation</div>
+        <div class="mechanic-desc">
+          When a button triggers an API call, we link them.
+          CDP provides initiator stack traces that we match to nodes.
+        </div>
+        <div class="mechanic-detail">
+          <code>Network.requestWillBeSent</code> event<br>
+          Initiator.stackTrace → backendNodeId<br>
+          URL pattern inference: <code>/users/{id}</code><br>
+          JSON body shape: <code>{key: type}</code><br>
+          Result: NetworkEdge per API call
+        </div>
+      </div>
+
+      <div class="mechanic-card">
+        <div class="mechanic-icon" style="background: #00e89d15;">👁</div>
+        <div class="mechanic-title">Mutation Detection</div>
+        <div class="mechanic-desc">
+          Pages change constantly. AJAX loads, SPA navigations, animations.
+          MutationWatcher debounces DOM changes and triggers graph rebuilds.
+        </div>
+        <div class="mechanic-detail">
+          <code>Page.addScriptToEvaluateOnNewDocument</code><br>
+          MutationObserver injected pre-page-load<br>
+          150ms debounce window<br>
+          Suppress during <code>interact()</code> calls<br>
+          Diff-based graph patch (not full rebuild)
+        </div>
+      </div>
+
+      <div class="mechanic-card">
+        <div class="mechanic-icon" style="background: #ffb84d15;">🆔</div>
+        <div class="mechanic-title">Display IDs</div>
+        <div class="mechanic-desc">
+          Chrome AX node IDs are opaque numbers. We generate human-readable
+          IDs like <span style="color:var(--accent-cyan)">button-log-in</span> that LLMs can reference in tool calls.
+        </div>
+        <div class="mechanic-detail">
+          Format: <code>{role}-{name-slug}</code><br>
+          Deduplication: -2, -3 suffix<br>
+          Bidirectional map: display ↔ internal<br>
+          Stable across graph rebuilds<br>
+          Short, memorable, action-descriptive
+        </div>
+      </div>
+
+      <div class="mechanic-card">
+        <div class="mechanic-icon" style="background: #ff6b8a15;">🔄</div>
+        <div class="mechanic-title">Interact & Rebuild</div>
+        <div class="mechanic-desc">
+          When an LLM calls <span style="color:var(--accent-cyan)">veil do click button-log-in</span>,
+          Veil clicks, waits for the page to settle, then rebuilds the graph.
+        </div>
+        <div class="mechanic-detail">
+          1. Resolve display ID → AX node ID<br>
+          2. <code>DOM.resolveNode</code> → objectId<br>
+          3. <code>Input.dispatchMouseEvent</code><br>
+          4. Suppress MutationWatcher<br>
+          5. Wait for network idle + DOM settle<br>
+          6. Full pipeline re-run → new graph
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ════════════════════ SESSION PERSISTENCE ════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="two-col">
+      <div class="reveal">
+        <div class="section-label">05 — Session Persistence</div>
+        <div class="section-title">Multi-step workflows that survive</div>
+        <p class="section-desc">
+          Each CLI invocation reuses the same Chromium session.
+          Cookies, localStorage, DOM state — all persist. Type username in one call,
+          password in the next, click login in the third.
+        </p>
+      </div>
+
+      <div class="session-flow reveal">
+        <div class="session-step">
+          <div class="step-dot" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">1</div>
+          <div class="step-content">
+            <div class="step-cmd"><span class="kw">veil open</span> <span class="arg">instagram.com</span></div>
+            <div class="step-output"><span class="highlight">8d060512-c7e1-4418-99fd-0312aeb2c487</span></div>
+            <div class="step-note">UUID on stdout, daemon auto-starts if needed</div>
+          </div>
+        </div>
+
+        <div class="session-step">
+          <div class="step-dot" style="border-color: var(--accent-blue); color: var(--accent-blue);">2</div>
+          <div class="step-content">
+            <div class="step-cmd"><span class="kw">veil do</span> <span class="arg">$SID</span> <span class="val">type textbox-username _amxn5</span></div>
+            <div class="step-output">PAGE https://instagram.com "Instagram"
+  textbox-username [textbox] value: "<span class="success">_amxn5</span>"</div>
+          </div>
+        </div>
+
+        <div class="session-step">
+          <div class="step-dot" style="border-color: var(--accent-violet); color: var(--accent-violet);">3</div>
+          <div class="step-content">
+            <div class="step-cmd"><span class="kw">veil do</span> <span class="arg">$SID</span> <span class="val">type textbox-password ••••••</span></div>
+            <div class="step-note">Session retains username from step 2</div>
+          </div>
+        </div>
+
+        <div class="session-step">
+          <div class="step-dot" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">4</div>
+          <div class="step-content">
+            <div class="step-cmd"><span class="kw">veil do</span> <span class="arg">$SID</span> <span class="val">click button-log-in</span></div>
+            <div class="step-output">PAGE https://instagram.com/accounts/login/two_factor
+<span class="success">→ Navigated! Session persisted across 3 CLI calls</span></div>
+          </div>
+        </div>
+
+        <div class="session-step">
+          <div class="step-dot" style="border-color: var(--accent-amber); color: var(--accent-amber);">5</div>
+          <div class="step-content">
+            <div class="step-cmd"><span class="kw">veil graph</span> <span class="arg">$SID</span></div>
+            <div class="step-output">PAGE https://instagram.com/ "(4) Instagram"
+  textbox-security-code [textbox] "Security code"
+  button-confirm [button] "Confirm"</div>
+            <div class="step-note">2FA page — browser state fully preserved</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ════════════════════ TEST COVERAGE ════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">06 — Test Coverage</div>
+      <div class="section-title">238 tests, zero failures</div>
+      <p class="section-desc">
+        Every pipeline stage, serializer, query engine, REST endpoint,
+        and CLI command is covered by unit tests.
+      </p>
+    </div>
+
+    <div class="stats-grid reveal">
+      <div class="stat-card">
+        <div class="stat-number" style="color: var(--accent-cyan);">238</div>
+        <div class="stat-label">Total Tests</div>
+        <div class="stat-sub">all passing</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: var(--accent-emerald);">13</div>
+        <div class="stat-label">Test Files</div>
+        <div class="stat-sub">across 3 packages</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: var(--accent-violet);">3.2<span style="font-size:28px">s</span></div>
+        <div class="stat-label">Total Runtime</div>
+        <div class="stat-sub">parallel execution</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: var(--accent-amber);">0</div>
+        <div class="stat-label">Failures</div>
+        <div class="stat-sub">clean slate</div>
+      </div>
+    </div>
+
+    <div class="test-breakdown reveal">
+      <div class="test-pkg core">
+        <div class="test-pkg-name">@veil/core</div>
+        <div class="test-bar-track"><div class="test-bar-fill"></div></div>
+        <ul class="test-file-list">
+          <li>stage-1-axtree.test.ts <span class="count">33</span></li>
+          <li>stage-5-semantics.test.ts <span class="count">30</span></li>
+          <li>serializer.test.ts <span class="count">26</span></li>
+          <li>api-endpoints.test.ts <span class="count">24</span></li>
+          <li>stage-4-components.test.ts <span class="count">18</span></li>
+          <li>differ.test.ts <span class="count">15</span></li>
+          <li>query.test.ts <span class="count">14</span></li>
+          <li>navigation-race.test.ts <span class="count">11</span></li>
+          <li>display-ids.test.ts <span class="count">9</span></li>
+        </ul>
+      </div>
+      <div class="test-pkg server">
+        <div class="test-pkg-name">@veil/server</div>
+        <div class="test-bar-track"><div class="test-bar-fill"></div></div>
+        <ul class="test-file-list">
+          <li>app.test.ts <span class="count">26</span></li>
+          <li>errors.test.ts <span class="count">12</span></li>
+        </ul>
+      </div>
+      <div class="test-pkg cli">
+        <div class="test-pkg-name">@veil/cli</div>
+        <div class="test-bar-track"><div class="test-bar-fill"></div></div>
+        <ul class="test-file-list">
+          <li>client.test.ts <span class="count">13</span></li>
+          <li>daemon.test.ts <span class="count">7</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ════════════════════ CLI COMMANDS ════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">07 — CLI Reference</div>
+      <div class="section-title">Every command at a glance</div>
+      <p class="section-desc">
+        Session-based commands for LLM agents. Legacy one-shot commands for humans.
+        Short session ID prefixes supported.
+      </p>
+    </div>
+
+    <div class="cmd-grid reveal">
+      <div class="cmd-card">
+        <div class="cmd-card-icon">🚀</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil open</span> <span class="ph">&lt;url&gt;</span></div>
+          <div class="cmd-desc">Open URL in persistent session, print UUID to stdout</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">📋</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil sessions</span></div>
+          <div class="cmd-desc">List all active sessions with IDs and URLs</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">🌳</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil graph</span> <span class="ph">&lt;id&gt;</span> <span class="ph">[--json]</span></div>
+          <div class="cmd-desc">Print behavior graph — compact text or JGF format</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">⚡</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil do</span> <span class="ph">&lt;id&gt; &lt;action&gt; &lt;nodeId&gt;</span></div>
+          <div class="cmd-desc">Interact with node — click, type, clear, select, focus, hover</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">🔍</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil find</span> <span class="ph">&lt;id&gt; &lt;query&gt;</span></div>
+          <div class="cmd-desc">Search nodes by role, name, or event type</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">🔬</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil inspect</span> <span class="ph">&lt;id&gt; &lt;nodeId&gt;</span></div>
+          <div class="cmd-desc">Show detailed node info — state, events, semantic label</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">🧭</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil navigate</span> <span class="ph">&lt;id&gt; &lt;url&gt;</span></div>
+          <div class="cmd-desc">Navigate within session, get updated graph</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">✕</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil close</span> <span class="ph">&lt;id | --all&gt;</span></div>
+          <div class="cmd-desc">Close session(s) and release browser resources</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">⚙</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil daemon</span> <span class="ph">start|stop|status|restart</span></div>
+          <div class="cmd-desc">Manage background daemon lifecycle</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">📡</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil decompose</span> <span class="ph">&lt;url&gt;</span></div>
+          <div class="cmd-desc">Legacy — one-shot decompose, no session persistence</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">💬</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil shell</span> <span class="ph">&lt;url&gt;</span></div>
+          <div class="cmd-desc">Legacy — interactive REPL with tab completion</div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-icon">🎯</div>
+        <div class="cmd-card-body">
+          <div class="cmd-syntax"><span class="kw">veil interact</span> <span class="ph">&lt;url&gt; &lt;nodeId&gt; &lt;action&gt;</span></div>
+          <div class="cmd-desc">Legacy — one-shot interact, no persistence</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ FOOTER ════════════════════ -->
+<footer class="footer">
+  <div class="container">
+    <p class="footer-text">
+      Project Veil — Built with TypeScript, Node.js, CDP<br>
+      pnpm monorepo · 4 packages · Chromium headless<br>
+      <span style="color: var(--accent-cyan);">238 tests passing</span> · vitest · turbo
+    </p>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const revealEls = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        setTimeout(() => entry.target.classList.add('visible'), i * 80);
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15 });
+  revealEls.forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

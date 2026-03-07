@@ -1,0 +1,74 @@
+
+> project-veil@ build /Users/xtractor/develop/experimental/project-veil
+> turbo build
+
+• turbo 2.8.10
+• Packages in scope: @veil/cli, @veil/core, @veil/sdk, @veil/server
+• Running build in 4 packages
+• Remote caching disabled
+@veil/core:build: cache hit, replaying logs df9f429c058488b5
+@veil/core:build: 
+@veil/core:build: > @veil/core@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/core
+@veil/core:build: > tsup src/index.ts --format esm --dts --sourcemap
+@veil/core:build: 
+@veil/core:build: CLI Building entry: src/index.ts
+@veil/core:build: CLI Using tsconfig: tsconfig.json
+@veil/core:build: CLI tsup v8.5.1
+@veil/core:build: CLI Target: es2024
+@veil/core:build: ESM Build start
+@veil/core:build: ESM dist/index.js     86.43 KB
+@veil/core:build: ESM dist/index.js.map 180.54 KB
+@veil/core:build: ESM ⚡️ Build success in 22ms
+@veil/core:build: DTS Build start
+@veil/core:build: DTS ⚡️ Build success in 612ms
+@veil/core:build: DTS dist/index.d.ts 7.48 KB
+@veil/sdk:build: cache hit, replaying logs 5eaeb74f096f4666
+@veil/sdk:build: 
+@veil/sdk:build: > @veil/sdk@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/sdk
+@veil/sdk:build: > tsup src/index.ts --format esm --dts --sourcemap
+@veil/sdk:build: 
+@veil/sdk:build: CLI Building entry: src/index.ts
+@veil/sdk:build: CLI Using tsconfig: tsconfig.json
+@veil/sdk:build: CLI tsup v8.5.1
+@veil/sdk:build: CLI Target: es2024
+@veil/sdk:build: ESM Build start
+@veil/sdk:build: ESM dist/index.js     527.00 B
+@veil/sdk:build: ESM dist/index.js.map 1.02 KB
+@veil/sdk:build: ESM ⚡️ Build success in 11ms
+@veil/sdk:build: DTS Build start
+@veil/sdk:build: DTS ⚡️ Build success in 411ms
+@veil/sdk:build: DTS dist/index.d.ts 840.00 B
+@veil/server:build: cache miss, executing 9b049fbd62d7e90c
+@veil/cli:build: cache miss, executing c9653160fe1f8160
+@veil/cli:build: 
+@veil/cli:build: > @veil/cli@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/cli
+@veil/cli:build: > tsup src/index.ts --format esm --sourcemap
+@veil/cli:build: 
+@veil/server:build: 
+@veil/server:build: > @veil/server@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/server
+@veil/server:build: > tsup src/index.ts --format esm --dts --sourcemap
+@veil/server:build: 
+@veil/cli:build: CLI Building entry: src/index.ts
+@veil/server:build: CLI Building entry: src/index.ts
+@veil/cli:build: CLI Using tsconfig: tsconfig.json
+@veil/server:build: CLI Using tsconfig: tsconfig.json
+@veil/cli:build: CLI tsup v8.5.1
+@veil/server:build: CLI tsup v8.5.1
+@veil/cli:build: CLI Target: es2024
+@veil/cli:build: ESM Build start
+@veil/server:build: CLI Target: es2024
+@veil/server:build: ESM Build start
+@veil/cli:build: ESM dist/index.js     30.32 KB
+@veil/cli:build: ESM dist/index.js.map 57.61 KB
+@veil/cli:build: ESM ⚡️ Build success in 54ms
+@veil/server:build: ESM dist/index.js     46.02 KB
+@veil/server:build: ESM dist/index.js.map 67.89 KB
+@veil/server:build: ESM ⚡️ Build success in 53ms
+@veil/server:build: DTS Build start
+@veil/server:build: DTS ⚡️ Build success in 640ms
+@veil/server:build: DTS dist/index.d.ts 2.47 KB
+
+ Tasks:    4 successful, 4 total
+Cached:    2 cached, 4 total
+  Time:    1.359s 
+

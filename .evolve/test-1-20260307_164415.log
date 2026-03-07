@@ -1,0 +1,239 @@
+
+> project-veil@ test /Users/xtractor/develop/experimental/project-veil
+> turbo test
+
+• turbo 2.8.10
+• Packages in scope: @veil/cli, @veil/core, @veil/sdk, @veil/server
+• Running test in 4 packages
+• Remote caching disabled
+@veil/core:test: cache bypass, force executing 6f4698b878d0752d
+@veil/core:build: cache hit, replaying logs df9f429c058488b5
+@veil/core:build: 
+@veil/core:build: > @veil/core@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/core
+@veil/core:build: > tsup src/index.ts --format esm --dts --sourcemap
+@veil/core:build: 
+@veil/core:build: CLI Building entry: src/index.ts
+@veil/core:build: CLI Using tsconfig: tsconfig.json
+@veil/core:build: CLI tsup v8.5.1
+@veil/core:build: CLI Target: es2024
+@veil/core:build: ESM Build start
+@veil/core:build: ESM dist/index.js     86.43 KB
+@veil/core:build: ESM dist/index.js.map 180.54 KB
+@veil/core:build: ESM ⚡️ Build success in 22ms
+@veil/core:build: DTS Build start
+@veil/core:build: DTS ⚡️ Build success in 612ms
+@veil/core:build: DTS dist/index.d.ts 7.48 KB
+@veil/sdk:build: cache hit, replaying logs 5eaeb74f096f4666
+@veil/sdk:build: 
+@veil/sdk:build: > @veil/sdk@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/sdk
+@veil/sdk:build: > tsup src/index.ts --format esm --dts --sourcemap
+@veil/sdk:build: 
+@veil/sdk:build: CLI Building entry: src/index.ts
+@veil/sdk:build: CLI Using tsconfig: tsconfig.json
+@veil/sdk:build: CLI tsup v8.5.1
+@veil/sdk:build: CLI Target: es2024
+@veil/sdk:build: ESM Build start
+@veil/sdk:build: ESM dist/index.js     527.00 B
+@veil/sdk:build: ESM dist/index.js.map 1.02 KB
+@veil/sdk:build: ESM ⚡️ Build success in 11ms
+@veil/sdk:build: DTS Build start
+@veil/sdk:build: DTS ⚡️ Build success in 411ms
+@veil/sdk:build: DTS dist/index.d.ts 840.00 B
+@veil/cli:test: cache bypass, force executing 5d4ecdef32658ab5
+@veil/server:test: cache bypass, force executing e48e2c5a471b9c6f
+@veil/server:test: 
+@veil/server:test: > @veil/server@0.1.0 test /Users/xtractor/develop/experimental/project-veil/packages/server
+@veil/server:test: > vitest run
+@veil/server:test: 
+@veil/core:test: 
+@veil/core:test: > @veil/core@0.1.0 test /Users/xtractor/develop/experimental/project-veil/packages/core
+@veil/core:test: > vitest run
+@veil/core:test: 
+@veil/cli:test: 
+@veil/cli:test: > @veil/cli@0.1.0 test /Users/xtractor/develop/experimental/project-veil/packages/cli
+@veil/cli:test: > vitest run
+@veil/cli:test: 
+@veil/server:test: 
+@veil/core:test: 
+@veil/server:test: [1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/Users/xtractor/develop/experimental/project-veil/packages/server[39m
+@veil/core:test: [1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/Users/xtractor/develop/experimental/project-veil/packages/core[39m
+@veil/core:test: 
+@veil/server:test: 
+@veil/cli:test: 
+@veil/cli:test: [1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/Users/xtractor/develop/experimental/project-veil/packages/cli[39m
+@veil/cli:test: 
+@veil/cli:test:  [32m✓[39m src/__tests__/daemon.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+@veil/cli:test:  [32m✓[39m src/__tests__/client.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 49[2mms[22m[39m
+@veil/cli:test: 
+@veil/cli:test: [2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+@veil/cli:test: [2m      Tests [22m [1m[32m20 passed[39m[22m[90m (20)[39m
+@veil/cli:test: [2m   Start at [22m 16:44:19
+@veil/cli:test: [2m   Duration [22m 441ms[2m (transform 111ms, setup 0ms, import 135ms, tests 99ms, environment 0ms)[22m
+@veil/cli:test: 
+@veil/core:test:  [32m✓[39m src/__tests__/stage-4-components.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+@veil/core:test:  [32m✓[39m src/__tests__/display-ids.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+@veil/core:test:  [32m✓[39m src/__tests__/query.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+@veil/core:test:  [32m✓[39m src/__tests__/serializer.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+@veil/core:test:  [32m✓[39m src/__tests__/differ.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+@veil/core:test:  [32m✓[39m src/__tests__/stage-1-axtree.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+@veil/core:test:  [32m✓[39m src/__tests__/stage-5-semantics.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+@veil/core:test:  [32m✓[39m src/__tests__/api-endpoints.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+@veil/server:test:  [32m✓[39m src/__tests__/errors.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /health returns 200 with status ok
+@veil/server:test: [22m[39mGET /health 200 1ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions creates a session and returns 201
+@veil/server:test: [22m[39mPOST /api/sessions 201 1ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions without url returns 400
+@veil/server:test: [22m[39mPOST /api/sessions 400 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions with non-string url returns 400
+@veil/server:test: [22m[39mPOST /api/sessions 400 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions returns 200 with an array
+@veil/server:test: [22m[39mGET /api/sessions 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions lists created sessions
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions lists created sessions
+@veil/server:test: [22m[39mPOST /api/sessions 201 1ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions lists created sessions
+@veil/server:test: [22m[39mGET /api/sessions 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id returns 200 for existing session
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id returns 200 for existing session
+@veil/server:test: [22m[39mGET /api/sessions/551eb847-b8b5-4e8e-9534-efae266ce243 200 1ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id returns 404 for non-existent session
+@veil/server:test: [22m[39mGET /api/sessions/bad-id 404 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mDELETE /api/sessions/:id returns 200 and removes session
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mDELETE /api/sessions/:id returns 200 and removes session
+@veil/server:test: [22m[39mDELETE /api/sessions/7373a22d-0b25-4070-b1d8-da49251063c5 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mDELETE /api/sessions/:id returns 200 and removes session
+@veil/server:test: [22m[39mGET /api/sessions/7373a22d-0b25-4070-b1d8-da49251063c5 404 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mDELETE /api/sessions/:id returns 404 for non-existent session
+@veil/server:test: [22m[39mDELETE /api/sessions/bad-id 404 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph returns 200 with JGF
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph returns 200 with JGF
+@veil/server:test: [22m[39mGET /api/sessions/eb431e11-f04b-4cc5-9932-2ce0ee8e7311/graph 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph returns 404 for bad session
+@veil/server:test: [22m[39mGET /api/sessions/bad-id/graph 404 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/compact returns 200 with text
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/compact returns 200 with text
+@veil/server:test: [22m[39mGET /api/sessions/750652b2-6643-43bd-99ae-b0e076612fbc/graph/compact 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/compact returns 404 for bad session
+@veil/server:test: [22m[39mGET /api/sessions/bad-id/graph/compact 404 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/nodes returns 200 with array of nodes
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/nodes returns 200 with array of nodes
+@veil/server:test: [22m[39mGET /api/sessions/b1b2d5d2-c7c2-4807-9b05-79121c285df0/graph/nodes 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/nodes/:nodeId returns 200 for existing node
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/nodes/:nodeId returns 200 for existing node
+@veil/server:test: [22m[39mGET /api/sessions/3e1fda51-1c70-41f7-bcae-feaf57aea34a/graph/nodes/1 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/nodes/:nodeId returns 404 for non-existent node
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mGET /api/sessions/:id/graph/nodes/:nodeId returns 404 for non-existent node
+@veil/server:test: [22m[39mGET /api/sessions/c1765cc5-08cf-4c1a-8ff6-a393a8bd4125/graph/nodes/nonexistent 404 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact with valid action returns 200
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact with valid action returns 200
+@veil/server:test: [22m[39mPOST /api/sessions/b80e832e-ddf5-4413-8770-d6570f718c08/interact 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact with invalid action returns 400
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact with invalid action returns 400
+@veil/server:test: [22m[39mPOST /api/sessions/8359f6f5-28f1-4276-98cf-b03c057ec60d/interact 400 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact without nodeId returns 400
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact without nodeId returns 400
+@veil/server:test: [22m[39mPOST /api/sessions/0a709d4b-6fc8-4545-ab9f-f5aff48a97ed/interact 400 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact without action object returns 400
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact without action object returns 400
+@veil/server:test: [22m[39mPOST /api/sessions/61ed550b-a9ce-4d64-9f83-8b4de134a13f/interact 400 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact with type action missing text returns 400
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/interact with type action missing text returns 400
+@veil/server:test: [22m[39mPOST /api/sessions/a4699a5f-3c00-4bc3-9a58-c21baff68d80/interact 400 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/navigate with valid url returns 200
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/navigate with valid url returns 200
+@veil/server:test: [22m[39mPOST /api/sessions/770c81e9-f760-4b6c-ab8c-6c621fc6dc43/navigate 200 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/navigate without url returns 400
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/navigate without url returns 400
+@veil/server:test: [22m[39mPOST /api/sessions/b97cfd5b-2e1f-4ffa-8d6a-f4e05dbdc3a2/navigate 400 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mPOST /api/sessions/:id/navigate for non-existent session returns 404
+@veil/server:test: [22m[39mPOST /api/sessions/bad-id/navigate 404 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mreturns 429 when max sessions limit is reached
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mreturns 429 when max sessions limit is reached
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mreturns 429 when max sessions limit is reached
+@veil/server:test: [22m[39mPOST /api/sessions 201 0ms
+@veil/server:test: 
+@veil/server:test: [90mstdout[2m | src/__tests__/app.test.ts[2m > [22m[2mHono REST API[2m > [22m[2mreturns 429 when max sessions limit is reached
+@veil/server:test: [22m[39mPOST /api/sessions 429 0ms
+@veil/server:test: 
+@veil/server:test:  [32m✓[39m src/__tests__/app.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+@veil/server:test: 
+@veil/server:test: [2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+@veil/server:test: [2m      Tests [22m [1m[32m38 passed[39m[22m[90m (38)[39m
+@veil/server:test: [2m   Start at [22m 16:44:19
+@veil/server:test: [2m   Duration [22m 549ms[2m (transform 301ms, setup 0ms, import 372ms, tests 45ms, environment 0ms)[22m
+@veil/server:test: 
+@veil/core:test:  [32m✓[39m src/__tests__/navigation-race.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 661[2mms[22m[39m
+@veil/core:test:        [33m[2m✓[22m[39m should invalidate cache when MutationWatcher nav rebuild fails [33m 527[2mms[22m[39m
+@veil/core:test: 
+@veil/core:test: [2m Test Files [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+@veil/core:test: [2m      Tests [22m [1m[32m180 passed[39m[22m[90m (180)[39m
+@veil/core:test: [2m   Start at [22m 16:44:19
+@veil/core:test: [2m   Duration [22m 1.18s[2m (transform 1000ms, setup 0ms, import 1.31s, tests 724ms, environment 1ms)[22m
+@veil/core:test: 
+
+ Tasks:    5 successful, 5 total
+Cached:    2 cached, 5 total
+  Time:    1.741s 
+
