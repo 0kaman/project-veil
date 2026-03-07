@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import type { VeilConfig } from "@veil/sdk";
 import type { ServerConfig } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
@@ -16,7 +17,13 @@ export async function startServer(config: Partial<ServerConfig> = {}): Promise<v
     maxSessions: Number(process.env.VEIL_MAX_SESSIONS) || config.maxSessions || DEFAULT_CONFIG.maxSessions,
   };
 
-  const { app, manager, injectWebSocket } = createApp(resolved);
+  let veilConfig: VeilConfig | undefined;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey) {
+    veilConfig = { llm: { enabled: true, apiKey } };
+  }
+
+  const { app, manager, injectWebSocket } = createApp(resolved, veilConfig);
 
   const server = serve({
     fetch: app.fetch,
