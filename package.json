@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "turbo build",
+    "test": "turbo test",
+    "test:watch": "turbo test:watch",
     "clean": "turbo clean",
     "veil": "node packages/cli/dist/index.js"
   },
