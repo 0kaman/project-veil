@@ -271,6 +271,13 @@ export class VeilPage {
     return serializeJGF(graph);
   }
 
+  async screenshot(): Promise<Buffer> {
+    const result = (await this.page.cdp.send("Page.captureScreenshot", {
+      format: "png",
+    })) as { data: string };
+    return Buffer.from(result.data, "base64");
+  }
+
   close(): void {
     if (this.mutationWatcher) {
       this.mutationWatcher.stop();

@@ -113,6 +113,42 @@ pnpm veil interact https://github.com/login textbox-username type "myuser"
 pnpm veil shell https://github.com/login
 ```
 
+### MCP Server (for AI agents)
+
+Any MCP-compatible AI host (Claude Desktop, Cursor, Windsurf, etc.) can use Veil as a native tool.
+
+#### Claude Desktop Config
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "veil": {
+      "command": "node",
+      "args": ["/path/to/project-veil/packages/mcp/dist/index.js"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-..."
+      }
+    }
+  }
+}
+```
+
+#### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `veil_open` | Open a URL in a new browser session |
+| `veil_graph` | Get the behavior graph (compact text or JSON) |
+| `veil_interact` | Click, type, select, etc. on page elements |
+| `veil_navigate` | Navigate to a new URL within a session |
+| `veil_find` | Search for nodes by role, name, or event |
+| `veil_inspect` | Get detailed info about a specific node |
+| `veil_sessions` | List active browser sessions |
+| `veil_close` | Close a session or all sessions |
+| `veil_screenshot` | Take a screenshot of the current page |
+
 ### SDK Usage (TypeScript)
 
 ```typescript
@@ -247,6 +283,7 @@ project-veil/
 │   │       └── graph/      # Model, serializer, query, display IDs, differ
 │   ├── sdk/                # TypeScript SDK — re-exports core for agent consumption
 │   ├── server/             # HTTP/WebSocket API server (Hono), session manager
+│   ├── mcp/                # MCP server — native tool access for AI agents (Claude Desktop, Cursor, etc.)
 │   └── cli/                # CLI tool
 │       └── src/
 │           ├── index.ts    # Command router (session + legacy commands)
@@ -296,12 +333,13 @@ Full structured data with node metadata, edges, component groups, semantic label
 
 ## Test Coverage
 
-238 tests across 13 files in 3 packages, all passing:
+260 tests across 14 files in 4 packages, all passing:
 
 | Package | Tests | Files |
 |---------|-------|-------|
 | `@veil/core` | 180 | 9 (pipeline stages, serializer, query, display IDs, differ, API endpoints) |
 | `@veil/server` | 38 | 2 (REST API routes, error handling) |
+| `@veil/mcp` | 22 | 1 (MCP tool handlers, session resolution) |
 | `@veil/cli` | 20 | 2 (HTTP client, daemon lifecycle) |
 
 ```bash
