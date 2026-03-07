@@ -73,7 +73,40 @@ async function dispatchClick(cdp: CDPClient, backendNodeId: number): Promise<voi
 
 async function dispatchType(cdp: CDPClient, backendNodeId: number, text: string): Promise<void> {
   await cdp.send("DOM.focus", { backendNodeId });
-  await cdp.send("Input.insertText", { text });
+
+  // Monaco editors (VS Code, LeetCode, etc.) mangle Input.insertText with auto-indent.
+  // Use Monaco's API directly when detected.
+  const monacoSet = await tryMonacoSetValue(cdp, backendNodeId, text);
+  if (!monacoSet) {
+    await cdp.send("Input.insertText", { text });
+  }
+}
+
+async function tryMonacoSetValue(
+  cdp: CDPClient,
+  backendNodeId: number,
+  text: string,
+): Promise<boolean> {
+  try {
+    const { objectId } = await resolveNode(cdp, backendNodeId);
+    const result = (await cdp.send("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: `function(text) {
+        const editorEl = this.closest?.('.monaco-editor');
+        if (!editorEl) return false;
+        const id = editorEl.getAttribute('data-uri')?.replace('inmemory://model/', '');
+        const models = window.monaco?.editor?.getModels?.() ?? [];
+        const model = id ? models.find(m => m.uri.path === '/' + id || m.uri.toString().includes(id)) : models[0];
+        if (model) { model.setValue(text); return true; }
+        return false;
+      }`,
+      arguments: [{ value: text }],
+      returnByValue: true,
+    })) as { result: { value: unknown } };
+    return result.result?.value === true;
+  } catch {
+    return false;
+  }
 }
 
 async function dispatchClear(cdp: CDPClient, backendNodeId: number): Promise<void> {

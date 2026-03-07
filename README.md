@@ -58,21 +58,59 @@ pnpm install
 pnpm build
 ```
 
-### CLI Usage
+### CLI Usage — Session-Based (for LLM agents)
+
+Sessions persist across CLI invocations. A background daemon holds Chromium alive.
 
 ```bash
-# Decompose a webpage into a behavior graph (compact text)
+# Open a page — returns a session UUID
+SID=$(pnpm veil open https://github.com/login)
+
+# View the behavior graph
+pnpm veil graph $SID              # compact text (LLM-friendly)
+pnpm veil graph $SID --json       # JSON Graph Format
+
+# Interact with nodes — session state survives each call
+pnpm veil do $SID type textbox-username myuser
+pnpm veil do $SID type textbox-password mypass
+pnpm veil do $SID click button-sign-in
+# → Now logged in! Cookies, localStorage, DOM all persisted.
+
+# Navigate within the same session
+pnpm veil navigate $SID https://github.com/settings
+
+# Search for nodes
+pnpm veil find $SID button        # by role
+pnpm veil find $SID submit        # by name or event
+
+# Inspect a single node in detail
+pnpm veil inspect $SID button-sign-in
+
+# List / close sessions
+pnpm veil sessions
+pnpm veil close $SID
+pnpm veil close --all
+
+# Daemon management
+pnpm veil daemon start|stop|status|restart
+
+# Short session IDs work (prefix match)
+pnpm veil graph 8d06              # matches 8d060512-c7e1-...
+```
+
+### CLI Usage — Legacy One-Shot (for humans)
+
+```bash
+# Decompose a webpage (no session persistence)
 pnpm veil decompose https://github.com/login
-
-# JSON Graph Format output
 pnpm veil decompose https://news.ycombinator.com --json
-
-# With LLM-powered semantic enrichment (requires Anthropic API key)
 ANTHROPIC_API_KEY=sk-... pnpm veil decompose https://amazon.com --llm
 
-# Interact with a node, then output the updated graph
+# One-shot interact
 pnpm veil interact https://github.com/login textbox-username type "myuser"
-pnpm veil interact https://example.com button-submit click
+
+# Interactive REPL
+pnpm veil shell https://github.com/login
 ```
 
 ### SDK Usage (TypeScript)
@@ -149,6 +187,28 @@ ws://127.0.0.1:3100/ws/sessions/<id>/graph
 
 ## Architecture
 
+### Session Persistence
+
+The CLI is a thin HTTP client. A background daemon (the existing `@veil/server`) holds Chromium sessions alive across CLI invocations:
+
+```
+LLM tool calls: veil open → veil do → veil graph → veil do → ...
+        │
+        ▼
+   CLI process (thin HTTP client)
+        │  ensureDaemon() → auto-starts if not running
+        │  fetch(localhost:3100/api/...)
+        ▼
+   Daemon (@veil/server, background process, PID file at ~/.veil/)
+        │  SessionManager: Map<uuid, { VeilPage, browser }>
+        │  Sessions survive across all CLI calls
+        ▼
+   Chromium (headless, CDP)
+        │  Cookies, localStorage, DOM state — all persisted
+```
+
+### Decomposition Pipeline
+
 Veil uses a **5-stage decomposition pipeline** that runs on raw Chrome DevTools Protocol, not Playwright or Puppeteer:
 
 ```
@@ -182,12 +242,20 @@ project-veil/
 ├── packages/
 │   ├── core/               # Browser runtime, instrumentation, pipeline, graph store
 │   │   └── src/
-│   │       ├── browser/    # Chrome launcher, CDP client, page abstraction
+│   │       ├── browser/    # Chrome launcher, CDP client, page abstraction, interactions
 │   │       ├── pipeline/   # Stages 1-5 decomposition pipeline
 │   │       └── graph/      # Model, serializer, query, display IDs, differ
 │   ├── sdk/                # TypeScript SDK — re-exports core for agent consumption
-│   ├── server/             # HTTP/WebSocket API server (Hono)
-│   └── cli/                # CLI tool (veil decompose, veil interact)
+│   ├── server/             # HTTP/WebSocket API server (Hono), session manager
+│   └── cli/                # CLI tool
+│       └── src/
+│           ├── index.ts    # Command router (session + legacy commands)
+│           ├── daemon.ts   # Daemon lifecycle (auto-start, PID file, health check)
+│           └── client.ts   # HTTP client wrapping server REST API
+├── docs/
+│   └── product-overview.html  # Interactive visual product dashboard
+├── scripts/
+│   └── evolve.sh           # Continuous development loop (build → test → analyze)
 ├── ARCHITECTURE.md         # Detailed system architecture document
 ├── turbo.json
 └── pnpm-workspace.yaml
@@ -225,6 +293,21 @@ COMPONENTS
 ### JSON Graph Format (for programmatic use)
 
 Full structured data with node metadata, edges, component groups, semantic labels, and API endpoints.
+
+## Test Coverage
+
+238 tests across 13 files in 3 packages, all passing:
+
+| Package | Tests | Files |
+|---------|-------|-------|
+| `@veil/core` | 180 | 9 (pipeline stages, serializer, query, display IDs, differ, API endpoints) |
+| `@veil/server` | 38 | 2 (REST API routes, error handling) |
+| `@veil/cli` | 20 | 2 (HTTP client, daemon lifecycle) |
+
+```bash
+pnpm test          # Run all tests
+pnpm test:watch    # Watch mode
+```
 
 ## Tech Stack
 
