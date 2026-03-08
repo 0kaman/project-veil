@@ -303,32 +303,4 @@ export function registerTools(server: McpServer, manager: SessionManager): void 
     },
   );
 
-  // veil_screenshot
-  server.tool(
-    "veil_screenshot",
-    "Take a screenshot of the current page for visual verification",
-    {
-      session_id: z.string().describe("Session ID or prefix"),
-    },
-    async ({ session_id }) => {
-      try {
-        const id = resolveSessionId(manager, session_id);
-        const page = manager.getPage(id);
-        const buffer = await page.screenshot();
-        const base64 = buffer.toString("base64");
-
-        return {
-          content: [
-            {
-              type: "image" as const,
-              data: base64,
-              mimeType: "image/png",
-            },
-          ],
-        };
-      } catch (err) {
-        return errorResult(err);
-      }
-    },
-  );
 }

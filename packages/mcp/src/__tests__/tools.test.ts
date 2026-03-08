@@ -82,9 +82,6 @@ vi.mock("@veil/core", async (importOriginal) => {
     async toJSON() {
       return { graph: { nodes: [] } };
     }
-    async screenshot() {
-      return Buffer.from("fakepng", "utf-8");
-    }
     onGraphChange(_cb: any) {
       return () => {};
     }
@@ -430,25 +427,6 @@ describe("MCP Tools", () => {
     const result = await callTool(server, "veil_close", {});
     expect(result.isError).toBeUndefined();
     expect(result.content[0].text).toContain("Closed 2 session(s)");
-  });
-
-  // ---- veil_screenshot ----
-
-  it("veil_screenshot returns image content", async () => {
-    const openResult = await callTool(server, "veil_open", {
-      url: "https://example.com",
-    });
-    const sessionId = openResult.content[0].text.match(
-      /Session: ([a-f0-9-]+)/,
-    )![1];
-
-    const result = await callTool(server, "veil_screenshot", {
-      session_id: sessionId,
-    });
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0].type).toBe("image");
-    expect(result.content[0].mimeType).toBe("image/png");
-    expect(typeof result.content[0].data).toBe("string");
   });
 
   // ---- Session ID resolution ----
