@@ -89,6 +89,23 @@ export class VeilClient {
     return this.getGraphCompact(id);
   }
 
+  // --- Auth ---
+
+  async auth(
+    id: string,
+    options?: { loginUrl?: string; timeoutMs?: number },
+  ): Promise<{ success: boolean; cookieCount: number; finalUrl: string }> {
+    const res = await this.request(`/api/sessions/${id}/auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options ?? {}),
+      signal: AbortSignal.timeout((options?.timeoutMs ?? 120_000) + 10_000),
+    });
+    return res.json() as Promise<{ success: boolean; cookieCount: number; finalUrl: string }>;
+  }
+
+  // --- Navigate ---
+
   async navigate(id: string, url: string): Promise<string> {
     await this.request(`/api/sessions/${id}/navigate`, {
       method: "POST",

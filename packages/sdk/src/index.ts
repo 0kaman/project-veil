@@ -31,6 +31,8 @@ export type {
   ComponentGroup,
   SemanticLabel,
   VeilConfig,
+  AuthOptions,
+  AuthResult,
 } from "@veil/core";
 
 // SDK-specific types

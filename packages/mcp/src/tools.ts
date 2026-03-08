@@ -274,6 +274,47 @@ export function registerTools(server: McpServer, manager: SessionManager): void 
     },
   );
 
+  // veil_auth
+  server.tool(
+    "veil_auth",
+    "Open a visible browser for the user to log in manually. Use when a page requires authentication (e.g. login form, 401, redirect to sign-in).",
+    {
+      session_id: z.string().describe("Session ID or prefix"),
+      login_url: z
+        .string()
+        .optional()
+        .describe("Login URL. Defaults to the session's current page."),
+      timeout_seconds: z
+        .number()
+        .optional()
+        .default(120)
+        .describe("Max seconds to wait for user to complete login"),
+    },
+    async ({ session_id, login_url, timeout_seconds }) => {
+      try {
+        const id = resolveSessionId(manager, session_id);
+        const result = await manager.authSession(id, {
+          loginUrl: login_url,
+          timeoutMs: (timeout_seconds ?? 120) * 1000,
+        });
+
+        if (result.success) {
+          const page = manager.getPage(id);
+          const graph = await page.getGraph();
+          return textResult(
+            `Auth successful! ${result.cookieCount} cookies captured.\nPage: "${graph.metadata.title}" (${new URL(graph.metadata.url).hostname})\nNodes: ${graph.nodes.size}`,
+          );
+        }
+
+        return textResult(
+          `Auth incomplete. ${result.cookieCount} cookies captured (partial).\nLast URL: ${result.finalUrl}`,
+        );
+      } catch (err) {
+        return errorResult(err);
+      }
+    },
+  );
+
   // veil_close
   server.tool(
     "veil_close",

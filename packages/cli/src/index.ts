@@ -31,6 +31,7 @@ const USAGE = `Usage:
   veil inspect <session-id> <nodeId>               Node detail
   veil do <session-id> <action> <nodeId> [value]   Interact with node
   veil navigate <session-id> <url>                 Navigate within session
+  veil auth <session-id> [--url <login-url>] [--timeout <seconds>]  Authenticate
   veil daemon start|stop|status|restart            Manage daemon
 
 Legacy (one-shot, no session persistence):
@@ -58,6 +59,7 @@ const SHELL_HELP = `Shell commands:
   inspect <nodeId>        Show detailed info for a node
   find <query>            Search nodes by role, name, or event type
   navigate <url>          Navigate to a new URL
+  auth                    Open visible browser to log in manually
   url                     Print current URL and page title
   help                    Show this help
   exit                    Exit the shell (also Ctrl+C / Ctrl+D)`;
@@ -68,7 +70,7 @@ const INTERACTION_COMMANDS = new Set([
 
 const ALL_COMMANDS = [
   "graph", "json", "click", "type", "clear", "select",
-  "focus", "hover", "inspect", "find", "navigate", "url", "help", "exit",
+  "focus", "hover", "inspect", "find", "navigate", "auth", "url", "help", "exit",
 ];
 
 // ANSI colors (no chalk dependency)
@@ -453,6 +455,33 @@ async function executeCommand(
       break;
     }
 
+    case "auth": {
+      console.log(`${DIM}Opening visible browser for login...${RESET}`);
+      console.log(`${YELLOW}Log in manually in the browser window, then press Enter here when done.${RESET}`);
+      const manualSignal = new Promise<void>((resolve) => {
+        const onLine = () => {
+          process.stdin.off("data", onLine);
+          resolve();
+        };
+        process.stdin.on("data", onLine);
+      });
+      try {
+        const result = await state.veil.auth(state.page, { manualSignal });
+        if (result.success) {
+          console.log(`${GREEN}Auth successful!${RESET} ${result.cookieCount} cookies captured.`);
+          const graph = await state.page.getGraph();
+          refreshDisplayIds(state, graph);
+          state.url = graph.metadata.url;
+          console.log(`${DIM}Page: "${graph.metadata.title}" — ${graph.nodes.size} nodes${RESET}`);
+        } else {
+          console.log(`${YELLOW}Auth incomplete.${RESET} ${result.cookieCount} cookies captured (partial).`);
+        }
+      } catch (err) {
+        console.error(`${RED}Auth failed: ${err instanceof Error ? err.message : String(err)}${RESET}`);
+      }
+      break;
+    }
+
     case "navigate": {
       if (!rest) { console.error(`${RED}Usage: navigate <url>${RESET}`); break; }
       let newUrl = rest;
@@ -772,6 +801,40 @@ async function cmdDo(args: string[]): Promise<void> {
   console.log(compact);
 }
 
+async function cmdAuth(args: string[]): Promise<void> {
+  await ensureDaemon();
+  const client = createClient();
+
+  if (!args[0]) {
+    console.error("Error: session ID required\nUsage: veil auth <session-id> [--url <login-url>] [--timeout <seconds>]");
+    process.exit(1);
+  }
+
+  const id = await resolveSessionId(client, args[0]);
+
+  let loginUrl: string | undefined;
+  let timeoutMs = 120_000;
+
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--url" && args[i + 1]) {
+      loginUrl = normalizeUrl(args[++i]);
+    } else if (args[i] === "--timeout" && args[i + 1]) {
+      timeoutMs = parseInt(args[++i], 10) * 1000;
+    }
+  }
+
+  console.error("Opening visible browser for login...");
+  console.error("Log in manually, then the browser will detect completion automatically.");
+
+  const result = await client.auth(id, { loginUrl, timeoutMs });
+
+  if (result.success) {
+    console.log(`Auth successful! ${result.cookieCount} cookies captured.`);
+  } else {
+    console.log(`Auth incomplete. ${result.cookieCount} cookies captured (partial).`);
+  }
+}
+
 async function cmdNavigate(args: string[]): Promise<void> {
   await ensureDaemon();
   const client = createClient();
@@ -819,7 +882,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 }
 
 const SESSION_COMMANDS = new Set([
-  "open", "sessions", "close", "graph", "find", "inspect", "do", "navigate", "daemon",
+  "open", "sessions", "close", "graph", "find", "inspect", "do", "navigate", "auth", "daemon",
 ]);
 
 async function main(): Promise<void> {
@@ -845,6 +908,7 @@ async function main(): Promise<void> {
         case "inspect": await cmdInspectSession(commandArgs); break;
         case "do": await cmdDo(commandArgs); break;
         case "navigate": await cmdNavigate(commandArgs); break;
+        case "auth": await cmdAuth(commandArgs); break;
         case "daemon": await cmdDaemon(commandArgs); break;
       }
     } catch (err) {

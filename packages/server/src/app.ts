@@ -6,6 +6,7 @@ import { SessionManager } from "./sessions.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { graphRoutes } from "./routes/graph.js";
 import { interactRoutes } from "./routes/interact.js";
+import { authRoutes } from "./routes/auth.js";
 import { handleWsUpgrade } from "./ws.js";
 import { getVisualizerHtml } from "./visualizer.js";
 import type { ServerConfig } from "./types.js";
@@ -41,6 +42,7 @@ export function createApp(config: Partial<ServerConfig> = {}, veilConfig?: VeilC
   // REST routes
   app.route("/api/sessions", sessionRoutes(manager));
   app.route("/api/sessions/:id/graph", graphRoutes(manager));
+  app.route("/api/sessions/:id/auth", authRoutes(manager));
   app.route("/api/sessions/:id", interactRoutes(manager));
 
   // WebSocket route

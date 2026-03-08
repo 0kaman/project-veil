@@ -1,3 +1,6 @@
+// Auth types
+export type { AuthOptions, AuthResult } from "./browser/auth.js";
+
 // Core classes
 export type {
   BehaviorNode,
@@ -27,6 +30,8 @@ export { inferSemantics } from "./pipeline/stage-5-semantics.js";
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
 import { waitForNetworkIdle, waitForDomSettle } from "./browser/page.js";
+import { performAuthFlow, type AuthOptions, type AuthResult } from "./browser/auth.js";
+import type { CDPClient } from "./browser/cdp-client.js";
 import { buildGraphFromAXTree, patchGraphFromDiff } from "./pipeline/stage-1-axtree.js";
 import { enrichGraphWithEvents, enrichSpecificNodesWithEvents } from "./pipeline/stage-2-events.js";
 import { correlateNetwork } from "./pipeline/stage-3-network.js";
@@ -271,6 +276,21 @@ export class VeilPage {
     return serializeJGF(graph);
   }
 
+  /** @internal — expose CDP client for auth flow */
+  getCdp(): CDPClient {
+    return this.page.cdp;
+  }
+
+  async getCurrentUrl(): Promise<string> {
+    return this.page.getCurrentUrl();
+  }
+
+  invalidateCache(): void {
+    this.cachedGraph = null;
+    this.lastSnapshot = null;
+    this.graphBuildPromise = null;
+  }
+
   close(): void {
     if (this.mutationWatcher) {
       this.mutationWatcher.stop();
@@ -466,6 +486,33 @@ export class Veil {
     const page = await connectToPage(this.browser.port);
     await page.navigate(url);
     return new VeilPage(page, url, this.config);
+  }
+
+  async auth(page: VeilPage, options?: AuthOptions): Promise<AuthResult> {
+    const cdp = page.getCdp();
+    const currentUrl = await page.getCurrentUrl();
+    const result = await performAuthFlow(cdp, currentUrl, options);
+    if (result.success) {
+      await cdp.send("Page.reload");
+      // Wait for page to load
+      await new Promise<void>((resolve) => {
+        const handler = () => {
+          cdp.off("Page.loadEventFired", handler);
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          cdp.off("Page.loadEventFired", handler);
+          resolve();
+        }, 10_000);
+        cdp.on("Page.loadEventFired", handler);
+      });
+      await waitForNetworkIdle(cdp);
+      await waitForDomSettle(cdp);
+      page.invalidateCache();
+      await page.getGraph(); // rebuild
+    }
+    return result;
   }
 
   async close(): Promise<void> {

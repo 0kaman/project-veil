@@ -1,4 +1,4 @@
-import { Veil, type VeilPage, type VeilConfig, type GraphChangeCallback } from "@veil/sdk";
+import { Veil, type VeilPage, type VeilConfig, type GraphChangeCallback, type AuthOptions, type AuthResult } from "@veil/sdk";
 import { ServerError } from "./errors.js";
 import type { SessionInfo } from "./types.js";
 
@@ -7,6 +7,7 @@ interface Session {
   url: string;
   page: VeilPage;
   createdAt: number;
+  authInProgress: boolean;
   /** Listeners registered through the manager — re-wired on navigate */
   changeListeners: Map<GraphChangeCallback, () => void>;
 }
@@ -30,7 +31,7 @@ export class SessionManager {
     const page = await this.veil.open(url);
     const createdAt = Date.now();
 
-    this.sessions.set(id, { id, url, page, createdAt, changeListeners: new Map() });
+    this.sessions.set(id, { id, url, page, createdAt, authInProgress: false, changeListeners: new Map() });
 
     // Eagerly build graph so it's ready for queries
     await page.getGraph();
@@ -116,6 +117,24 @@ export class SessionManager {
         current.changeListeners.delete(callback);
       }
     };
+  }
+
+  async authSession(id: string, options?: AuthOptions): Promise<AuthResult> {
+    const session = this.sessions.get(id);
+    if (!session) throw new ServerError(404, "SESSION_NOT_FOUND", `Session "${id}" not found`);
+    if (session.authInProgress) throw new ServerError(409, "AUTH_IN_PROGRESS", "Authentication is already in progress for this session");
+
+    session.authInProgress = true;
+    try {
+      const result = await this.veil.auth(session.page, options);
+      if (result.success) {
+        const graph = await session.page.getGraph();
+        session.url = graph.metadata.url;
+      }
+      return result;
+    } finally {
+      session.authInProgress = false;
+    }
   }
 
   async shutdown(): Promise<void> {

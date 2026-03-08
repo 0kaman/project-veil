@@ -18,12 +18,21 @@ function findChromeBinary(): string {
   return "google-chrome";
 }
 
-export async function launchBrowser(): Promise<BrowserHandle> {
-  const userDataDir = await mkdtemp(join(tmpdir(), "veil-"));
+export interface LaunchOptions {
+  headless?: boolean;        // default: true
+  userDataDir?: string;      // if provided, skip mkdtemp + skip cleanup
+  startUrl?: string;         // default: "about:blank"
+}
+
+export async function launchBrowser(options?: LaunchOptions): Promise<BrowserHandle> {
+  const headless = options?.headless ?? true;
+  const ownedDataDir = !options?.userDataDir;
+  const userDataDir = options?.userDataDir ?? await mkdtemp(join(tmpdir(), "veil-"));
+  const startUrl = options?.startUrl ?? "about:blank";
 
   const chromePath = findChromeBinary();
   const args = [
-    "--headless=new",
+    ...(headless ? ["--headless=new"] : []),
     "--disable-gpu",
     "--no-first-run",
     "--no-default-browser-check",
@@ -37,7 +46,7 @@ export async function launchBrowser(): Promise<BrowserHandle> {
     "--disable-blink-features=AutomationControlled",
     "--window-size=1920,1080",
     "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "about:blank",
+    startUrl,
     `--user-data-dir=${userDataDir}`,
     "--remote-debugging-port=0",
   ];
@@ -82,7 +91,9 @@ export async function launchBrowser(): Promise<BrowserHandle> {
         resolve();
       }, 3_000);
     });
-    await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
+    if (ownedDataDir) {
+      await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
+    }
   };
 
   return { wsUrl, port, process: child, close };

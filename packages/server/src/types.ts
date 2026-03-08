@@ -29,6 +29,11 @@ export interface NavigateRequest {
   url: string;
 }
 
+export interface AuthRequest {
+  loginUrl?: string;
+  timeoutMs?: number;
+}
+
 export interface SessionInfo {
   id: string;
   url: string;
