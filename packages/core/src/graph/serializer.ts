@@ -35,7 +35,7 @@ export function serializeCompactText(graph: BehaviorGraph): string {
 
     for (const event of node.events) {
       const effect = event.estimatedEffect
-        ? ` (${event.estimatedEffect})`
+        ? ` (${compactEffect(event.estimatedEffect)})`
         : "";
       lines.push(
         `${indent}  on:${event.eventType} → ${event.category}${effect}`,
@@ -114,6 +114,20 @@ export function serializeCompactText(graph: BehaviorGraph): string {
 
 function formatSemanticLabel(label: SemanticLabel): string {
   return `${label.category}:${label.action} (${label.confidence.toFixed(2)}, ${label.source})`;
+}
+
+/**
+ * Strip query params from URLs in estimatedEffect strings.
+ * "POST /ajax/bz?__a=1&__ccg=EXCELLENT&..." → "POST /ajax/bz"
+ * "navigates to /dashboard" → "navigates to /dashboard" (unchanged)
+ */
+function compactEffect(effect: string): string {
+  // Match "METHOD /path?query" pattern
+  const match = effect.match(/^((?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S+?)(\?[^\s]*)(.*)$/i);
+  if (match) {
+    return match[1] + (match[3] || "");
+  }
+  return effect;
 }
 
 function compactUrl(raw: string): string {

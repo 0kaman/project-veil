@@ -127,7 +127,7 @@ export function registerTools(server: McpServer, manager: SessionManager): void 
   // veil_interact
   server.tool(
     "veil_interact",
-    "Perform an action on a page element (click, type, select, etc.) and get the updated graph",
+    "Perform an action on a page element (click, type, select, etc.). Returns a summary — use veil_graph for the full updated graph.",
     {
       session_id: z.string().describe("Session ID or prefix"),
       node_id: z.string().describe('Display ID of the node (e.g. "button-sign-in")'),
@@ -144,9 +144,12 @@ export function registerTools(server: McpServer, manager: SessionManager): void 
         const id = resolveSessionId(manager, session_id);
         const page = manager.getPage(id);
         const interactAction = buildInteractAction(action, value);
-        await page.interact(node_id, interactAction);
-        const text = await page.toCompactText();
-        return textResult(text);
+        const graph = await page.interact(node_id, interactAction);
+        const hostname = new URL(graph.metadata.url).hostname;
+        const valueDesc = value ? ` "${value}"` : "";
+        return textResult(
+          `Done: ${action}${valueDesc} on "${node_id}"\nPage: "${graph.metadata.title}" (${hostname})\nURL: ${graph.metadata.url}\nNodes: ${graph.nodes.size}`,
+        );
       } catch (err) {
         return errorResult(err);
       }
@@ -156,7 +159,7 @@ export function registerTools(server: McpServer, manager: SessionManager): void 
   // veil_navigate
   server.tool(
     "veil_navigate",
-    "Navigate an existing session to a new URL",
+    "Navigate an existing session to a new URL. Returns a summary — use veil_graph for the full updated graph.",
     {
       session_id: z.string().describe("Session ID or prefix"),
       url: z.string().describe("New URL to navigate to"),
@@ -167,8 +170,11 @@ export function registerTools(server: McpServer, manager: SessionManager): void 
         const normalizedUrl = normalizeUrl(url);
         await manager.navigateSession(id, normalizedUrl);
         const page = manager.getPage(id);
-        const text = await page.toCompactText();
-        return textResult(text);
+        const graph = await page.getGraph();
+        const hostname = new URL(graph.metadata.url).hostname;
+        return textResult(
+          `Navigated: ${graph.metadata.url}\nPage: "${graph.metadata.title}" (${hostname})\nNodes: ${graph.nodes.size}`,
+        );
       } catch (err) {
         return errorResult(err);
       }

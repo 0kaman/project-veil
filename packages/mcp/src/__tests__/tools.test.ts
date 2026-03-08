@@ -191,7 +191,7 @@ describe("MCP Tools", () => {
 
   // ---- veil_interact ----
 
-  it("veil_interact click returns updated graph", async () => {
+  it("veil_interact click returns summary", async () => {
     const openResult = await callTool(server, "veil_open", {
       url: "https://example.com",
     });
@@ -205,7 +205,8 @@ describe("MCP Tools", () => {
       action: "click",
     });
     expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toContain("PAGE");
+    expect(result.content[0].text).toContain('Done: click on "1"');
+    expect(result.content[0].text).toContain("Nodes:");
   });
 
   it("veil_interact type requires value", async () => {
@@ -240,7 +241,7 @@ describe("MCP Tools", () => {
       value: "hello",
     });
     expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toContain("PAGE");
+    expect(result.content[0].text).toContain('Done: type "hello" on "2"');
   });
 
   it("veil_interact select requires value", async () => {
@@ -262,7 +263,7 @@ describe("MCP Tools", () => {
 
   // ---- veil_navigate ----
 
-  it("veil_navigate returns updated graph", async () => {
+  it("veil_navigate returns summary", async () => {
     const openResult = await callTool(server, "veil_open", {
       url: "https://example.com",
     });
@@ -275,7 +276,8 @@ describe("MCP Tools", () => {
       url: "https://other.com",
     });
     expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toContain("PAGE");
+    expect(result.content[0].text).toContain("Navigated:");
+    expect(result.content[0].text).toContain("Nodes:");
   });
 
   // ---- veil_find ----

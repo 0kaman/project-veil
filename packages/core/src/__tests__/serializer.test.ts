@@ -66,6 +66,53 @@ describe("serializeCompactText", () => {
     expect(text).toMatch(/on:click → api_call \(POST \/api\/save\)/);
   });
 
+  it("strips query params from estimatedEffect URLs", () => {
+    const nodes = new Map([
+      ["n1", makeNode({
+        id: "n1",
+        role: "button",
+        name: "Track",
+        events: [makeEvent({
+          eventType: "click",
+          category: "api_call",
+          estimatedEffect: "POST /ajax/bz?__a=1&__ccg=EXCELLENT&__comet_req=7&lsd=token123",
+        })],
+      })],
+    ]);
+    const graph = makeGraph({ nodes, roots: ["n1"] });
+    const text = serializeCompactText(graph);
+    expect(text).toContain("on:click → api_call (POST /ajax/bz)");
+    expect(text).not.toContain("__a=1");
+  });
+
+  it("preserves estimatedEffect with no query params", () => {
+    const nodes = new Map([
+      ["n1", makeNode({
+        id: "n1",
+        role: "button",
+        name: "Go",
+        events: [makeEvent({ eventType: "click", category: "api_call", estimatedEffect: "GET /api/users" })],
+      })],
+    ]);
+    const graph = makeGraph({ nodes, roots: ["n1"] });
+    const text = serializeCompactText(graph);
+    expect(text).toContain("on:click → api_call (GET /api/users)");
+  });
+
+  it("preserves non-URL estimatedEffect text", () => {
+    const nodes = new Map([
+      ["n1", makeNode({
+        id: "n1",
+        role: "link",
+        name: "Home",
+        events: [makeEvent({ eventType: "click", category: "navigation", estimatedEffect: "navigates to /dashboard" })],
+      })],
+    ]);
+    const graph = makeGraph({ nodes, roots: ["n1"] });
+    const text = serializeCompactText(graph);
+    expect(text).toContain("on:click → navigation (navigates to /dashboard)");
+  });
+
   it("shows semantic labels", () => {
     const nodes = new Map([
       ["n1", makeNode({
