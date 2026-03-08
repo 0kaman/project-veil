@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veil — The Browser Built for AI</title>
+<meta name="description" content="Veil decomposes webpages into Behavior Graphs so AI agents can see, understand, and interact with the web. 50,000 lines of HTML become 40 lines of structured text.">
+<meta name="keywords" content="AI browser, behavior graph, web automation, MCP server, LLM tools, CDP, accessibility tree">
+<link rel="canonical" href="https://projectveil.site">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://projectveil.site">
+<meta property="og:title" content="Veil — The Browser Built for AI">
+<meta property="og:description" content="Decompose webpages into Behavior Graphs. 50K lines → 40 lines. Give your AI agent structured understanding of any website.">
+<meta property="og:site_name" content="Project Veil">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Veil — The Browser Built for AI">
+<meta name="twitter:description" content="Decompose webpages into Behavior Graphs. 50K lines → 40 lines. Give your AI agent structured understanding of any website.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&family=Satoshi:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+
+<style>
+  @font-face {
+    font-family: 'Satoshi';
+    src: url('https://fonts.googleapis.com/css2?family=Satoshi:wght@300;400;500;600;700;900&display=swap');
+  }
+
+  :root {
+    --bg-void: #07090e;
+    --bg-deep: #0a0d14;
+    --bg-surface: #0f1219;
+    --bg-elevated: #141820;
+    --bg-card: #181d28;
+    --bg-card-hover: #1c2230;
+    --border: #1a2030;
+    --border-subtle: #151b28;
+    --border-glow: #243048;
+    --text-primary: #e4e8f0;
+    --text-secondary: #7d8da4;
+    --text-muted: #3e4d65;
+    --text-dim: #2a3548;
+
+    --cyan: #00d4f5;
+    --cyan-bright: #00e8ff;
+    --cyan-dim: rgba(0, 212, 245, 0.08);
+    --cyan-glow: rgba(0, 212, 245, 0.15);
+    --blue: #4d7cff;
+    --violet: #8b5cf6;
+    --emerald: #00d68f;
+    --amber: #f5a623;
+    --rose: #f43f5e;
+
+    --font-display: 'Instrument Serif', Georgia, serif;
+    --font-body: 'Satoshi', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --radius-xs: 6px;
+    --container: 1200px;
+  }
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border-glow) transparent; }
+
+  body {
+    background: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-weight: 400;
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Grain */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0.018;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  ::selection { background: var(--cyan-glow); color: var(--cyan-bright); }
+
+  .container { max-width: var(--container); margin: 0 auto; padding: 0 32px; }
+
+  /* ═══════════ NAV ═══════════ */
+  .nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    padding: 0 32px;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .nav.scrolled {
+    background: rgba(7, 9, 14, 0.82);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    max-width: var(--container);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 72px;
+  }
+  .nav-logo {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-style: italic;
+    background: linear-gradient(135deg, var(--cyan), var(--blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-decoration: none;
+    letter-spacing: -0.01em;
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 36px;
+    list-style: none;
+  }
+  .nav-links a {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.2s;
+    letter-spacing: 0.01em;
+  }
+  .nav-links a:hover { color: var(--text-primary); }
+  .nav-cta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: all 0.2s;
+    background: transparent;
+    cursor: pointer;
+  }
+  .btn-ghost:hover { border-color: var(--border-glow); color: var(--text-primary); background: var(--bg-elevated); }
+  .btn-ghost svg { width: 16px; height: 16px; fill: currentColor; }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 20px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--bg-void);
+    text-decoration: none;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--cyan), var(--blue));
+    cursor: pointer;
+    transition: all 0.25s;
+    box-shadow: 0 0 20px rgba(0, 212, 245, 0.15);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 30px rgba(0, 212, 245, 0.25); }
+
+  .nav-mobile-toggle { display: none; background: none; border: none; color: var(--text-primary); cursor: pointer; padding: 8px; }
+
+  /* ═══════════ HERO ═══════════ */
+  .hero {
+    padding: 160px 0 80px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Ambient orbs */
+  .hero::before {
+    content: '';
+    position: absolute;
+    width: 800px;
+    height: 800px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0, 212, 245, 0.06) 0%, transparent 70%);
+    top: -300px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    animation: breathe 8s ease-in-out infinite;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.04) 0%, transparent 70%);
+    bottom: -200px;
+    right: -200px;
+    pointer-events: none;
+    animation: breathe 12s ease-in-out infinite reverse;
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+    50% { opacity: 0.7; transform: translateX(-50%) scale(1.08); }
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 32px;
+    background: var(--cyan-dim);
+  }
+  .hero-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: var(--cyan);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--cyan);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .hero h1 {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 7vw, 88px);
+    font-weight: 400;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 1;
+  }
+  .hero h1 em {
+    font-style: italic;
+    background: linear-gradient(135deg, var(--cyan-bright), var(--blue), var(--violet));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-sub {
+    font-size: clamp(16px, 1.4vw, 19px);
+    color: var(--text-secondary);
+    max-width: 640px;
+    margin: 0 auto 40px;
+    line-height: 1.7;
+    font-weight: 400;
+    position: relative;
+    z-index: 1;
+  }
+
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 64px;
+    position: relative;
+    z-index: 1;
+  }
+  .hero-actions .btn-primary { padding: 12px 28px; font-size: 15px; }
+  .hero-actions .btn-ghost { padding: 11px 24px; font-size: 15px; }
+
+  /* Terminal */
+  .hero-terminal {
+    max-width: 720px;
+    margin: 0 auto 56px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg-deep);
+    text-align: left;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.02) inset;
+  }
+  .terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 18px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .terminal-dot:nth-child(1) { background: #ff5f57; }
+  .terminal-dot:nth-child(2) { background: #febc2e; }
+  .terminal-dot:nth-child(3) { background: #28c840; }
+  .terminal-title {
+    flex: 1;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-right: 30px;
+  }
+  .terminal-body {
+    padding: 20px 22px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    overflow-x: auto;
+  }
+  .terminal-body .prompt { color: var(--cyan); }
+  .terminal-body .cmd { color: var(--text-primary); }
+  .terminal-body .kw { color: var(--cyan); }
+  .terminal-body .str { color: var(--emerald); }
+  .terminal-body .role { color: var(--violet); }
+  .terminal-body .id { color: var(--blue); }
+  .terminal-body .ev { color: var(--rose); }
+  .terminal-body .sem { color: var(--emerald); }
+  .terminal-body .dim { color: var(--text-muted); }
+  .terminal-body .net { color: var(--amber); }
+
+  /* Stats Bar */
+  .stats-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 48px;
+    padding: 24px 0;
+    position: relative;
+    z-index: 1;
+  }
+  .stat-item {
+    text-align: center;
+  }
+  .stat-value {
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-style: italic;
+    color: var(--text-primary);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .stat-value .accent { color: var(--cyan); }
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .stat-divider {
+    width: 1px;
+    height: 32px;
+    background: var(--border);
+  }
+
+  /* ═══════════ SECTION HELPERS ═══════════ */
+  .section {
+    padding: 100px 0;
+    position: relative;
+  }
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 16px;
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 4vw, 52px);
+    font-weight: 400;
+    line-height: 1.12;
+    margin-bottom: 20px;
+    letter-spacing: -0.01em;
+  }
+  .section-title em {
+    font-style: italic;
+    color: var(--cyan);
+  }
+  .section-desc {
+    font-size: 17px;
+    color: var(--text-secondary);
+    max-width: 560px;
+    line-height: 1.7;
+    margin-bottom: 56px;
+  }
+  .section-center { text-align: center; }
+  .section-center .section-desc { margin-left: auto; margin-right: auto; }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+
+  /* ═══════════ PROBLEM ═══════════ */
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .problem-card {
+    padding: 36px 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-deep);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .problem-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0;
+    transition: opacity 0.35s;
+  }
+  .problem-card:hover { border-color: var(--border-glow); transform: translateY(-4px); background: var(--bg-surface); }
+  .problem-card:hover::before { opacity: 0.5; }
+  .problem-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-bottom: 20px;
+    background: var(--cyan-dim);
+  }
+  .problem-card h3 {
+    font-family: var(--font-body);
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+  }
+  .problem-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+  .problem-card .highlight-num {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-style: italic;
+    color: var(--cyan);
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* ═══════════ COMPARISON ═══════════ */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 56px;
+  }
+  .compare-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .compare-panel:hover { border-color: var(--border-glow); }
+  .compare-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .compare-header .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .compare-body {
+    padding: 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    white-space: pre;
+    overflow-x: auto;
+    background: var(--bg-deep);
+    min-height: 200px;
+  }
+
+  /* ═══════════ FUNNEL ═══════════ */
+  .funnel { max-width: 860px; margin: 0 auto; }
+  .funnel-stage {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 24px;
+    align-items: start;
+    padding: 24px 0;
+  }
+  .funnel-stage + .funnel-stage { border-top: 1px solid var(--border-subtle); }
+  .funnel-meta { text-align: right; padding-top: 4px; }
+  .funnel-label { font-family: var(--font-mono); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .funnel-count { font-family: var(--font-display); font-size: 32px; font-style: italic; line-height: 1.1; }
+  .funnel-sub { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+  .funnel-content { padding-left: 24px; border-left: 2px solid var(--border); }
+  .funnel-code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .funnel-code .tag { color: var(--rose); }
+  .funnel-code .attr { color: var(--amber); }
+  .funnel-code .str { color: var(--emerald); }
+  .funnel-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    gap: 8px;
+  }
+  .funnel-arrow::before, .funnel-arrow::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+  }
+  .funnel-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--emerald);
+  }
+  .funnel-result {
+    text-align: center;
+    margin-top: 40px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-secondary);
+    padding: 12px 24px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    display: inline-flex;
+    gap: 12px;
+    background: var(--bg-deep);
+  }
+  .funnel-result .accent { color: var(--cyan); font-weight: 600; }
+
+  /* ═══════════ BENTO FEATURES ═══════════ */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: auto;
+    gap: 16px;
+  }
+  .bento-card {
+    padding: 32px 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-deep);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .bento-card:hover { border-color: var(--border-glow); background: var(--bg-surface); }
+  .bento-card.span-2 { grid-column: span 2; }
+  .bento-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .bento-card h3 {
+    font-family: var(--font-body);
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+  }
+  .bento-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* Pipeline mini viz */
+  .pipeline-mini {
+    display: flex;
+    gap: 2px;
+    margin-top: 20px;
+    border-radius: var(--radius-xs);
+    overflow: hidden;
+  }
+  .pipeline-step {
+    flex: 1;
+    padding: 14px 10px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    transition: all 0.3s;
+  }
+  .pipeline-step:hover { filter: brightness(1.3); }
+  .pipeline-step .num {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-style: italic;
+    margin-bottom: 4px;
+    opacity: 0.6;
+  }
+
+  .bento-code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--cyan);
+    background: rgba(0, 212, 245, 0.06);
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  /* ═══════════ USE CASES ═══════════ */
+  .usecases-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .usecase-card {
+    padding: 36px 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-deep);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+  }
+  .usecase-card:hover { border-color: var(--border-glow); transform: translateY(-4px); }
+  .usecase-icon {
+    font-size: 28px;
+    margin-bottom: 20px;
+  }
+  .usecase-card h3 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .usecase-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* ═══════════ COMPARISON TABLE ═══════════ */
+  .comparison-table {
+    overflow-x: auto;
+    margin-bottom: 48px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-deep);
+  }
+  .comparison-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .comparison-table thead th {
+    padding: 16px 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+    white-space: nowrap;
+  }
+  .comparison-table thead th:first-child { border-radius: var(--radius) 0 0 0; }
+  .comparison-table thead th:last-child { border-radius: 0 var(--radius) 0 0; }
+  .comparison-table thead th.highlight-col {
+    color: var(--cyan);
+    background: rgba(0, 212, 245, 0.04);
+  }
+  .comparison-table tbody td {
+    padding: 13px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    vertical-align: middle;
+  }
+  .comparison-table tbody tr:last-child td { border-bottom: none; }
+  .comparison-table tbody tr:hover { background: var(--bg-surface); }
+  .comparison-table .feature-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .comparison-table .highlight-col {
+    background: rgba(0, 212, 245, 0.03);
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+  .comparison-table .cell-yes { color: var(--emerald); }
+  .comparison-table .cell-no { color: var(--text-muted); }
+  .comparison-table .cell-partial { color: var(--amber); }
+  .comparison-table code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--cyan);
+    background: var(--cyan-dim);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* ═══════════ DIFFERENTIATOR CARDS ═══════════ */
+  .diff-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 48px;
+  }
+  .diff-card {
+    padding: 28px 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-deep);
+    text-align: center;
+    transition: all 0.3s;
+  }
+  .diff-card:hover { border-color: var(--border-glow); background: var(--bg-surface); }
+  .diff-number {
+    font-family: var(--font-display);
+    font-size: 48px;
+    font-style: italic;
+    color: var(--cyan);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .diff-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .diff-card p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* ═══════════ VALIDATION QUOTE ═══════════ */
+  .validation-quote {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 28px 32px;
+    border-left: 3px solid var(--cyan);
+    background: var(--bg-deep);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    text-align: left;
+  }
+  .validation-quote p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    font-style: italic;
+    margin-bottom: 12px;
+  }
+  .validation-quote cite {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: normal;
+  }
+
+  /* ═══════════ INTEGRATION ═══════════ */
+  .integration-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .integration-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg-deep);
+    transition: all 0.3s;
+  }
+  .integration-card:hover { border-color: var(--border-glow); }
+  .integration-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+  }
+  .integration-header .icon { font-size: 18px; }
+  .integration-header h3 { font-size: 14px; font-weight: 600; }
+  .integration-header .tag {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .integration-body {
+    padding: 18px 20px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  /* ═══════════ QUICK START ═══════════ */
+  .quickstart-box {
+    max-width: 640px;
+    margin: 0 auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg-deep);
+    box-shadow: 0 16px 60px rgba(0, 0, 0, 0.3);
+  }
+  .quickstart-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 20px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .quickstart-body {
+    padding: 24px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 2;
+    color: var(--text-secondary);
+  }
+  .quickstart-body .prompt { color: var(--cyan); }
+  .quickstart-body .comment { color: var(--text-muted); }
+  .quickstart-body .cmd { color: var(--text-primary); }
+
+  /* ═══════════ FOOTER ═══════════ */
+  .footer {
+    padding: 60px 0;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+  .footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .footer-brand {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .footer-logo {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-style: italic;
+    color: var(--text-primary);
+  }
+  .footer-tagline {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .footer-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+  .footer-links a {
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .footer-links a:hover { color: var(--text-primary); }
+  .footer-meta {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.8;
+  }
+  .footer-meta .tests { color: var(--cyan); }
+
+  /* ═══════════ SCROLL REVEAL ═══════════ */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ═══════════ RESPONSIVE ═══════════ */
+  @media (max-width: 1024px) {
+    .bento { grid-template-columns: repeat(2, 1fr); }
+    .bento-card.span-2 { grid-column: span 2; }
+    .problem-grid, .usecases-grid, .integration-grid, .diff-grid { grid-template-columns: 1fr 1fr; }
+    .compare-grid { grid-template-columns: 1fr; }
+    .stats-bar { flex-wrap: wrap; gap: 24px; }
+    .nav-links { display: none; }
+    .nav-mobile-toggle { display: block; }
+  }
+
+  @media (max-width: 768px) {
+    .container { padding: 0 20px; }
+    .hero { padding: 120px 0 60px; }
+    .section { padding: 72px 0; }
+    .hero-actions { flex-direction: column; }
+    .bento { grid-template-columns: 1fr; }
+    .bento-card.span-2 { grid-column: span 1; }
+    .diff-grid { grid-template-columns: 1fr 1fr; }
+    .comparison-table { font-size: 12px; }
+    .comparison-table thead th, .comparison-table tbody td { padding: 10px 12px; }
+    .funnel-stage { grid-template-columns: 1fr; gap: 12px; }
+    .funnel-meta { text-align: left; }
+    .funnel-content { border-left: none; padding-left: 0; border-top: 2px solid var(--border); padding-top: 12px; }
+    .footer-inner { flex-direction: column; gap: 32px; text-align: center; }
+    .footer-meta { text-align: center; }
+    .stat-divider { display: none; }
+    .pipeline-mini { flex-wrap: wrap; }
+    .pipeline-step { min-width: calc(33% - 2px); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ NAV ═══════════ -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">Veil</a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#use-cases">Use Cases</a></li>
+      <li><a href="#integration">Integrate</a></li>
+    </ul>
+    <div class="nav-cta">
+      <a href="https://github.com/0kaman/project-veil" class="btn-ghost" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+      <a href="#quickstart" class="btn-primary">Get Started</a>
+    </div>
+    <button class="nav-mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('show')" aria-label="Menu">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<!-- ═══════════ HERO ═══════════ -->
+<header class="hero">
+  <div class="container">
+    <div class="hero-badge reveal">Open Source</div>
+    <h1 class="reveal">The browser<br>built for <em>AI</em></h1>
+    <p class="hero-sub reveal">
+      Veil decomposes webpages into Behavior Graphs — structured maps of interactive
+      elements, their events, API calls, and semantic purpose. So your AI agent can
+      see, understand, and act on the web.
+    </p>
+    <div class="hero-actions reveal">
+      <a href="#quickstart" class="btn-primary">Get Started</a>
+      <a href="https://github.com/0kaman/project-veil" class="btn-ghost" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+
+    <div class="hero-terminal reveal">
+      <div class="terminal-bar">
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <div class="terminal-title">Terminal</div>
+      </div>
+      <div class="terminal-body"><span class="prompt">$</span> <span class="cmd">veil open instagram.com</span>
+<span class="dim">Session: 8d060512-c7e1-4418-99fd-0312aeb2c487</span>
+
+<span class="prompt">$</span> <span class="cmd">veil graph 8d06</span>
+<span class="kw">PAGE</span> https://instagram.com <span class="str">"Instagram"</span>
+<span class="kw">STATE</span> route:/
+
+<span class="kw">NODES</span>
+  <span class="id">textbox-username</span> [<span class="role">textbox</span>] <span class="str">"Phone number, username, or email"</span>
+    <span class="ev">on:change</span> <span class="sem">{auth:input}</span>
+  <span class="id">textbox-password</span> [<span class="role">textbox</span>] <span class="str">"Password"</span>
+    <span class="ev">on:change</span> <span class="sem">{auth:input}</span>
+  <span class="id">button-log-in</span> [<span class="role">button</span>] <span class="str">"Log in"</span>
+    <span class="ev">on:click</span> → <span class="net">POST /api/v1/web/accounts/login/ajax/</span>
+    <span class="sem">{auth:login}</span></div>
+    </div>
+
+    <div class="stats-bar reveal">
+      <div class="stat-item">
+        <div class="stat-value"><span class="accent">99.9</span>%</div>
+        <div class="stat-label">Reduction</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-value">50K → <span class="accent">40</span></div>
+        <div class="stat-label">Lines</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-value"><span class="accent">262</span></div>
+        <div class="stat-label">Tests Passing</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-value"><span class="accent">8</span></div>
+        <div class="stat-label">MCP Tools</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ═══════════ PROBLEM ═══════════ -->
+<section class="section">
+  <div class="container">
+    <div class="section-center reveal">
+      <div class="section-eyebrow">The Problem</div>
+      <div class="section-title">AI agents are <em>flying blind</em></div>
+      <p class="section-desc">
+        Current approaches to web automation are built for humans, not language models.
+        LLMs need structure, not pixels.
+      </p>
+    </div>
+
+    <div class="problem-grid">
+      <div class="problem-card reveal">
+        <div class="problem-icon">📸</div>
+        <span class="highlight-num">50K+</span>
+        <h3>Screenshots waste tokens</h3>
+        <p>A single page screenshot costs 50K+ tokens to process. Veil gives the LLM 40 lines of structured, actionable text instead.</p>
+      </div>
+      <div class="problem-card reveal">
+        <div class="problem-icon">🌀</div>
+        <span class="highlight-num">3,000+</span>
+        <h3>DOM is noise</h3>
+        <p>Thousands of nested divs, CSS classes, invisible elements, tracking pixels. Veil filters to 50–300 meaningful behavior nodes.</p>
+      </div>
+      <div class="problem-card reveal">
+        <div class="problem-icon">🔗</div>
+        <span class="highlight-num">0</span>
+        <h3>Selectors break</h3>
+        <p>CSS selectors are fragile — one redesign and they're gone. Veil uses semantic IDs like <code class="bento-code">button-log-in</code> that survive changes.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ═══════════ HOW IT WORKS ═══════════ -->
+<section class="section" id="how-it-works">
+  <div class="container">
+    <div class="section-center reveal">
+      <div class="section-eyebrow">How It Works</div>
+      <div class="section-title">From 50,000 lines to <em>40</em></div>
+      <p class="section-desc">
+        Every webpage passes through Veil's decomposition pipeline.
+        Humans see rendered pixels — LLMs receive structured behavior.
+      </p>
+    </div>
+
+    <!-- Side-by-side comparison -->
+    <div class="compare-grid reveal">
+      <div class="compare-panel">
+        <div class="compare-header">
+          <div class="dot" style="background: var(--rose);"></div>
+          What humans see — rendered pixels
+        </div>
+        <div class="compare-body" style="font-family: var(--font-body); white-space: normal; line-height: 1.8; padding: 28px; color: var(--text-muted); font-size: 13px;">
+          <div style="text-align: center; padding: 16px 0;">
+            <div style="font-family: var(--font-display); font-size: 24px; color: var(--text-primary); margin-bottom: 16px;">Sign In</div>
+            <div style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; margin: 8px auto; max-width: 220px; text-align: left; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">username or email</div>
+            <div style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; margin: 8px auto; max-width: 220px; text-align: left; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">password</div>
+            <div style="background: var(--blue); border-radius: 8px; padding: 11px 14px; margin: 12px auto; max-width: 220px; font-family: var(--font-mono); font-size: 12px; color: white;">Log In</div>
+            <div style="font-size: 11px; color: var(--blue); margin-top: 10px;">Forgot password?</div>
+          </div>
+          <div style="text-align: center; font-size: 11px; color: var(--text-dim); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 8px;">+ 3,000 invisible DOM nodes, CSS, fonts, images...</div>
+        </div>
+      </div>
+      <div class="compare-panel">
+        <div class="compare-header">
+          <div class="dot" style="background: var(--cyan);"></div>
+          What the LLM receives — compact text
+        </div>
+        <div class="compare-body"><span class="kw">PAGE</span> https://example.com/login <span class="str">"Sign In"</span>
+<span class="kw">STATE</span> route:/login
+
+<span class="kw">NODES</span>
+  <span class="id">textbox-username</span> [<span class="role">textbox</span>] <span class="str">"Username or email"</span>
+    <span class="ev">on:change</span>  <span class="sem">{auth:input}</span>
+  <span class="id">textbox-password</span> [<span class="role">textbox</span>] <span class="str">"Password"</span>
+    <span class="ev">on:change</span>  <span class="sem">{auth:input}</span>
+  <span class="id">button-log-in</span> [<span class="role">button</span>] <span class="str">"Log In"</span>
+    <span class="ev">on:click</span>  <span class="sem">{auth:login}</span>
+  <span class="id">link-forgot</span> [<span class="role">link</span>] <span class="str">"Forgot?"</span>
+
+<span class="kw">NETWORK</span>
+  <span class="net">POST /api/auth/login</span> ← <span class="id">button-log-in</span>
+
+<span class="kw">COMPONENTS</span>
+  <span class="sem">LoginForm</span> → textbox-username, textbox-password, button-log-in</div>
+      </div>
+    </div>
+
+    <!-- Funnel -->
+    <div class="reveal" style="margin-bottom: 16px;">
+      <div class="section-eyebrow" style="margin-bottom: 24px;">The Reduction Funnel</div>
+    </div>
+
+    <div class="funnel reveal">
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--text-muted);">Raw Source</div>
+          <div class="funnel-count" style="color: var(--text-muted);">~50K</div>
+          <div class="funnel-sub">lines of HTML</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="dim">&lt;!-- What the browser downloads --&gt;</span>
+<span class="tag">&lt;html&gt;</span>
+  <span class="tag">&lt;body&gt;</span>
+    <span class="tag">&lt;div</span> <span class="attr">class</span>=<span class="str">"css-1dbjc4n r-1awozwy..."</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;div</span> <span class="attr">class</span>=<span class="str">"css-1dbjc4n r-18u37iz..."</span><span class="tag">&gt;</span>
+        <span class="dim">...3000+ nested divs...</span></div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow"><span class="funnel-pill">CDP: Accessibility.getFullAXTree()</span></div>
+
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--cyan);">AXTree</div>
+          <div class="funnel-count" style="color: var(--cyan);">3K–10K</div>
+          <div class="funnel-sub">accessibility nodes</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="dim">// Chrome's accessibility tree</span>
+{ <span class="attr">nodeId</span>: <span class="str">"284"</span>, <span class="role">role</span>: <span class="str">"textbox"</span>,
+  <span class="attr">name</span>: <span class="str">"Phone number, username, or email"</span> }
+{ <span class="attr">nodeId</span>: <span class="str">"285"</span>, <span class="role">role</span>: <span class="str">"generic"</span> } <span class="dim">← filtered out</span>
+{ <span class="attr">nodeId</span>: <span class="str">"287"</span>, <span class="role">role</span>: <span class="str">"button"</span>,
+  <span class="attr">name</span>: <span class="str">"Log In"</span> }</div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow"><span class="funnel-pill">shouldKeep() → 22 interactive roles</span></div>
+
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--blue);">Filtered</div>
+          <div class="funnel-count" style="color: var(--blue);">50–300</div>
+          <div class="funnel-sub">behavior nodes</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="dim">// Only interactive + container roles</span>
+<span class="kw">KEPT</span>: textbox, button, link, checkbox, radio,
+      combobox, slider, switch, tab, menuitem...
+<span class="kw">DROPPED</span>: generic, none, InlineTextBox, paragraph,
+         LineBreak, StaticText... <span class="dim">(95% of nodes)</span></div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow"><span class="funnel-pill">Events + Network + Components + Semantics</span></div>
+
+      <div class="funnel-stage">
+        <div class="funnel-meta">
+          <div class="funnel-label" style="color: var(--emerald);">Compact Text</div>
+          <div class="funnel-count" style="color: var(--emerald);">~40</div>
+          <div class="funnel-sub">lines for LLM</div>
+        </div>
+        <div class="funnel-content">
+          <div class="funnel-code"><span class="kw">PAGE</span> https://instagram.com <span class="str">"Instagram"</span>
+<span class="kw">NODES</span>
+  <span class="id">textbox-username</span> [<span class="role">textbox</span>] <span class="str">"Phone number..."</span>
+    <span class="ev">on:change</span>  <span class="sem">{auth:input}</span>
+  <span class="id">button-log-in</span> [<span class="role">button</span>] <span class="str">"Log in"</span>
+    <span class="ev">on:click</span> → <span class="net">POST /api/v1/web/accounts/login/ajax/</span>
+    <span class="sem">{auth:login}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 40px;" class="reveal">
+      <div class="funnel-result">
+        50,000 lines → 40 lines <span class="accent">· 99.9% reduction ·</span> zero information loss for actions
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ═══════════ FEATURES BENTO ═══════════ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-center reveal">
+      <div class="section-eyebrow">Features</div>
+      <div class="section-title">Everything an AI agent needs</div>
+      <p class="section-desc">
+        From raw CDP connection to semantic inference — Veil handles the entire
+        web understanding stack so your agent doesn't have to.
+      </p>
+    </div>
+
+    <div class="bento">
+      <div class="bento-card span-2 reveal">
+        <div class="bento-eyebrow" style="color: var(--cyan);">Core Engine</div>
+        <h3>5-Stage Decomposition Pipeline</h3>
+        <p>Every webpage passes through five stages — from raw accessibility tree to semantically labeled behavior graph. Each stage enriches the graph with deeper understanding.</p>
+        <div class="pipeline-mini">
+          <div class="pipeline-step" style="background: rgba(0, 212, 245, 0.1); color: var(--cyan);">
+            <span class="num">1</span>AXTree
+          </div>
+          <div class="pipeline-step" style="background: rgba(77, 124, 255, 0.1); color: var(--blue);">
+            <span class="num">2</span>Events
+          </div>
+          <div class="pipeline-step" style="background: rgba(139, 92, 246, 0.1); color: var(--violet);">
+            <span class="num">3</span>Network
+          </div>
+          <div class="pipeline-step" style="background: rgba(0, 214, 143, 0.1); color: var(--emerald);">
+            <span class="num">4</span>Components
+          </div>
+          <div class="pipeline-step" style="background: rgba(245, 166, 35, 0.1); color: var(--amber);">
+            <span class="num">5</span>Semantics
+          </div>
+        </div>
+      </div>
+
+      <div class="bento-card reveal">
+        <div class="bento-eyebrow" style="color: var(--violet);">Integration</div>
+        <h3>MCP Native</h3>
+        <p>Works with Claude Desktop, Cursor, Windsurf, or any MCP-compatible host. 8 structured tools out of the box — no CLI needed.</p>
+        <div style="margin-top: 16px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); line-height: 2;">
+          veil_open · veil_graph · veil_interact<br>
+          veil_navigate · veil_find · veil_inspect<br>
+          veil_sessions · veil_close
+        </div>
+      </div>
+
+      <div class="bento-card reveal">
+        <div class="bento-eyebrow" style="color: var(--emerald);">Persistence</div>
+        <h3>Session Persistence</h3>
+        <p>Multi-step workflows that survive across calls. Login flows, form filling, navigation — cookies, localStorage, and DOM state all persist.</p>
+        <div style="margin-top: 14px; font-family: var(--font-mono); font-size: 11px; line-height: 1.8;">
+          <span style="color: var(--cyan);">1.</span> <span style="color: var(--text-muted);">veil open instagram.com</span><br>
+          <span style="color: var(--blue);">2.</span> <span style="color: var(--text-muted);">veil do type textbox-username</span><br>
+          <span style="color: var(--violet);">3.</span> <span style="color: var(--text-muted);">veil do type textbox-password</span><br>
+          <span style="color: var(--emerald);">4.</span> <span style="color: var(--text-muted);">veil do click button-log-in</span><br>
+          <span style="color: var(--amber);">5.</span> <span style="color: var(--text-muted);">→ 2FA page, session preserved</span>
+        </div>
+      </div>
+
+      <div class="bento-card reveal">
+        <div class="bento-eyebrow" style="color: var(--blue);">DX</div>
+        <h3>Human-Readable IDs</h3>
+        <p>Forget opaque node IDs. Veil generates semantic display IDs that LLMs can reason about and reference naturally in tool calls.</p>
+        <div style="margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px;">
+          <code class="bento-code">button-log-in</code>
+          <code class="bento-code">textbox-username</code>
+          <code class="bento-code">link-forgot-password</code>
+          <code class="bento-code">checkbox-remember-me</code>
+        </div>
+      </div>
+
+      <div class="bento-card reveal">
+        <div class="bento-eyebrow" style="color: var(--amber);">Real-time</div>
+        <h3>Live Graph Updates</h3>
+        <p>MutationWatcher detects DOM changes — AJAX loads, SPA navigations, animations — and patches the graph incrementally. No full rebuilds.</p>
+      </div>
+
+      <div class="bento-card reveal">
+        <div class="bento-eyebrow" style="color: var(--rose);">Low-level</div>
+        <h3>Raw CDP</h3>
+        <p>No Playwright. No Puppeteer. Direct Chrome DevTools Protocol for fine-grained control over every browser capability. Zero abstraction overhead.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ═══════════ USE CASES ═══════════ -->
+<section class="section" id="use-cases">
+  <div class="container">
+    <div class="section-center reveal">
+      <div class="section-eyebrow">Use Cases</div>
+      <div class="section-title">What you can build</div>
+      <p class="section-desc">
+        Veil gives AI agents structured web understanding.
+        Here's what becomes possible.
+      </p>
+    </div>
+
+    <div class="usecases-grid">
+      <div class="usecase-card reveal">
+        <div class="usecase-icon">🤖</div>
+        <h3>AI Web Agents</h3>
+        <p>Give Claude, GPT, or custom agents the ability to browse, understand, and interact with any website. Login to accounts, fill forms, navigate multi-step flows — through structured behavior graphs, not fragile selectors or expensive screenshots.</p>
+      </div>
+      <div class="usecase-card reveal">
+        <div class="usecase-icon">🧪</div>
+        <h3>Semantic Testing</h3>
+        <p>Write tests against behavior, not implementation. Assert that "the login button submits credentials to the auth API" — not that <code class="bento-code">#btn-3f2a</code> exists. Tests survive complete redesigns because they test <em>what things do</em>, not where they are.</p>
+      </div>
+      <div class="usecase-card reveal">
+        <div class="usecase-icon">📡</div>
+        <h3>API Discovery</h3>
+        <p>Automatically map which UI elements trigger which API endpoints. Veil extracts request/response shapes, URL patterns like <code class="bento-code">/users/{id}</code>, and status codes — without reading a single line of source code.</p>
+      </div>
+    </div>
+
+    <div class="usecases-grid" style="margin-top: 20px;">
+      <div class="usecase-card reveal">
+        <div class="usecase-icon">📊</div>
+        <h3>Web Intelligence</h3>
+        <p>Understand how any website works from the outside. What forms submit where, how components are grouped, what frameworks are used. Extract structured data through behavior graphs instead of brittle CSS selectors.</p>
+      </div>
+      <div class="usecase-card reveal">
+        <div class="usecase-icon">🔄</div>
+        <h3>Regression Detection</h3>
+        <p>Compare behavior graphs across page versions to detect functional changes. A button that used to call <code class="bento-code">POST /api/v1/login</code> now calls <code class="bento-code">POST /api/v2/auth</code>? Veil catches it — no visual diffing needed.</p>
+      </div>
+      <div class="usecase-card reveal">
+        <div class="usecase-icon">🌐</div>
+        <h3>Cross-Site Pattern Learning</h3>
+        <p>Discover common interaction patterns across websites — login flows, search behaviors, checkout processes. Behavior graphs normalize different implementations into comparable semantic structures.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ═══════════ WHY VEIL ═══════════ -->
+<section class="section" id="why-veil">
+  <div class="container">
+    <div class="section-center reveal">
+      <div class="section-eyebrow">Why Veil</div>
+      <div class="section-title">The only browser that <em>thinks</em> in behavior</div>
+      <p class="section-desc">
+        Existing tools give AI agents raw DOM or pixels. Veil gives them
+        structured understanding of what a page does — not just what it looks like.
+      </p>
+    </div>
+
+    <!-- Comparison table -->
+    <div class="comparison-table reveal">
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>Playwright / Puppeteer</th>
+            <th>browser-use / Stagehand</th>
+            <th class="highlight-col">Veil</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="feature-name">What AI receives</td>
+            <td>Raw DOM (3K+ nodes)</td>
+            <td>Annotated screenshots</td>
+            <td class="highlight-col">Behavior Graph (50-300 nodes)</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Token cost per page</td>
+            <td>~50K tokens</td>
+            <td>~50K tokens (image)</td>
+            <td class="highlight-col">~800 tokens (compact text)</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Knows what buttons do</td>
+            <td class="cell-no">No</td>
+            <td class="cell-no">No</td>
+            <td class="highlight-col cell-yes">Yes — event handlers classified</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Maps UI → API calls</td>
+            <td class="cell-no">No</td>
+            <td class="cell-no">No</td>
+            <td class="highlight-col cell-yes">Yes — stack trace correlation</td>
+          </tr>
+          <tr>
+            <td class="feature-name">React Fiber traversal</td>
+            <td class="cell-no">No</td>
+            <td class="cell-no">No</td>
+            <td class="highlight-col cell-yes">Yes — finds real handlers</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Semantic node IDs</td>
+            <td class="cell-no">CSS selectors</td>
+            <td class="cell-no">XY coordinates</td>
+            <td class="highlight-col cell-yes"><code>button-log-in</code></td>
+          </tr>
+          <tr>
+            <td class="feature-name">Session persistence</td>
+            <td class="cell-no">Per-script only</td>
+            <td class="cell-partial">Limited</td>
+            <td class="highlight-col cell-yes">Background daemon</td>
+          </tr>
+          <tr>
+            <td class="feature-name">API shape extraction</td>
+            <td class="cell-no">No</td>
+            <td class="cell-no">No</td>
+            <td class="highlight-col cell-yes"><code>{email: string, password: string}</code></td>
+          </tr>
+          <tr>
+            <td class="feature-name">Protocol</td>
+            <td>Abstracted CDP</td>
+            <td>Playwright wrapper</td>
+            <td class="highlight-col">Raw CDP (zero overhead)</td>
+          </tr>
+          <tr>
+            <td class="feature-name">MCP native</td>
+            <td class="cell-no">No</td>
+            <td class="cell-partial">Some</td>
+            <td class="highlight-col cell-yes">8 tools, stdio transport</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Key differentiators -->
+    <div class="diff-grid reveal">
+      <div class="diff-card">
+        <div class="diff-number">70%</div>
+        <div class="diff-label">fewer tokens</div>
+        <p>Compact text format vs equivalent JSON. LLM context windows go further.</p>
+      </div>
+      <div class="diff-card">
+        <div class="diff-number" style="color: var(--violet);">0</div>
+        <div class="diff-label">visual computation</div>
+        <p>Skips Blink rendering (layout, paint). Only runs JS + Accessibility pipeline.</p>
+      </div>
+      <div class="diff-card">
+        <div class="diff-number" style="color: var(--emerald);">5</div>
+        <div class="diff-label">enrichment stages</div>
+        <p>AXTree → Events → Network → Components → Semantics. Each stage adds meaning.</p>
+      </div>
+      <div class="diff-card">
+        <div class="diff-number" style="color: var(--amber);">∞</div>
+        <div class="diff-label">framework support</div>
+        <p>Explicit React Fiber traversal. Vue/Angular detection. Vanilla heuristics for everything else.</p>
+      </div>
+    </div>
+
+    <div class="reveal" style="text-align: center; margin-top: 48px;">
+      <blockquote class="validation-quote">
+        <p>"browser-use migrated from Playwright to raw CDP for exactly these reasons — Playwright's Node.js relay adds a network hop on every CDP call, prohibitive when making thousands of calls for event listeners, accessibility tree queries, and network monitoring."</p>
+        <cite>— Project Veil Architecture Decision Record</cite>
+      </blockquote>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ═══════════ INTEGRATION ═══════════ -->
+<section class="section" id="integration">
+  <div class="container">
+    <div class="section-center reveal">
+      <div class="section-eyebrow">Integrate</div>
+      <div class="section-title">Three ways to connect</div>
+      <p class="section-desc">
+        MCP server for AI hosts, CLI for scripting, TypeScript SDK for embedding.
+        Pick what fits your workflow.
+      </p>
+    </div>
+
+    <div class="integration-grid reveal">
+      <div class="integration-card">
+        <div class="integration-header">
+          <span class="icon">🔌</span>
+          <h3>MCP Server</h3>
+          <span class="tag">stdio</span>
+        </div>
+        <div class="integration-body">{
+  <span style="color:var(--cyan)">"mcpServers"</span>: {
+    <span style="color:var(--cyan)">"veil"</span>: {
+      <span style="color:var(--cyan)">"command"</span>: <span style="color:var(--emerald)">"node"</span>,
+      <span style="color:var(--cyan)">"args"</span>: [<span style="color:var(--emerald)">"veil-mcp"</span>]
+    }
+  }
+}</div>
+      </div>
+
+      <div class="integration-card">
+        <div class="integration-header">
+          <span class="icon">⌨</span>
+          <h3>CLI</h3>
+          <span class="tag">bash</span>
+        </div>
+        <div class="integration-body"><span style="color:var(--text-muted)"># Install globally</span>
+<span style="color:var(--cyan)">npm</span> install -g @veil/cli
+
+<span style="color:var(--text-muted)"># Open and explore</span>
+<span style="color:var(--cyan)">veil</span> open github.com/login
+<span style="color:var(--cyan)">veil</span> graph $SID
+<span style="color:var(--cyan)">veil</span> do $SID click button-sign-in</div>
+      </div>
+
+      <div class="integration-card">
+        <div class="integration-header">
+          <span class="icon">📦</span>
+          <h3>TypeScript SDK</h3>
+          <span class="tag">esm</span>
+        </div>
+        <div class="integration-body"><span style="color:var(--violet)">import</span> { Veil } <span style="color:var(--violet)">from</span> <span style="color:var(--emerald)">"@veil/core"</span>;
+
+<span style="color:var(--violet)">const</span> veil = <span style="color:var(--violet)">new</span> <span style="color:var(--cyan)">Veil</span>();
+<span style="color:var(--violet)">const</span> page = <span style="color:var(--violet)">await</span> veil.<span style="color:var(--cyan)">open</span>(<span style="color:var(--emerald)">"github.com"</span>);
+<span style="color:var(--violet)">const</span> graph = <span style="color:var(--violet)">await</span> page.<span style="color:var(--cyan)">getGraph</span>();
+<span style="color:var(--violet)">const</span> text = <span style="color:var(--violet)">await</span> page.<span style="color:var(--cyan)">toCompactText</span>();</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- ═══════════ QUICKSTART ═══════════ -->
+<section class="section section-center" id="quickstart">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-eyebrow">Quick Start</div>
+      <div class="section-title">Get started in <em>30 seconds</em></div>
+      <p class="section-desc">
+        Install the CLI, open a page, and see the behavior graph.
+      </p>
+    </div>
+
+    <div class="quickstart-box reveal">
+      <div class="quickstart-bar">
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+      </div>
+      <div class="quickstart-body"><span class="comment"># Install</span>
+<span class="prompt">$</span> <span class="cmd">npm install -g @veil/cli</span>
+
+<span class="comment"># Open any page</span>
+<span class="prompt">$</span> <span class="cmd">veil open github.com/login</span>
+<span style="color:var(--text-muted)">→ 8d060512-c7e1-4418-99fd-0312aeb2c487</span>
+
+<span class="comment"># See the behavior graph</span>
+<span class="prompt">$</span> <span class="cmd">veil graph 8d06</span>
+<span style="color:var(--text-muted)">→ PAGE, NODES, NETWORK, COMPONENTS...</span>
+
+<span class="comment"># Interact with elements</span>
+<span class="prompt">$</span> <span class="cmd">veil do 8d06 click button-sign-in</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">Veil</div>
+        <div class="footer-tagline">The browser built for AI</div>
+      </div>
+      <ul class="footer-links">
+        <li><a href="https://github.com/0kaman/project-veil" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/0kaman/project-veil#readme" target="_blank" rel="noopener">Docs</a></li>
+        <li><a href="https://www.npmjs.com/org/veil" target="_blank" rel="noopener">npm</a></li>
+      </ul>
+      <div class="footer-meta">
+        TypeScript · Node.js · CDP<br>
+        pnpm monorepo · 5 packages<br>
+        <span class="tests">262 tests passing</span> · MIT License
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const revealEls = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        setTimeout(() => entry.target.classList.add('visible'), i * 60);
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12 });
+  revealEls.forEach(el => observer.observe(el));
+
+  // Nav scroll effect
+  const nav = document.getElementById('nav');
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        nav.classList.toggle('scrolled', window.scrollY > 40);
+        ticking = false;
+      });
+      ticking = true;
+    }
+  });
+</script>
+</body>
+</html>
