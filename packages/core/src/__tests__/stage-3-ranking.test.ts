@@ -155,6 +155,50 @@ describe("Stage 3 — handler ranking (A2)", () => {
     expect(g.networkEdges[0].triggerNodeId).toBe("h00");
   });
 
+  it("col=0 handlers don't collide in exactIndex — falls through to line-ranking", () => {
+    // A1's fallback stores col=0 when [[FunctionLocation]] omits column data
+    // (bound functions, optimized-out source maps). If exactIndex used
+    // last-wins .set() with col=0, a stack frame at col=0 would arbitrarily
+    // match whichever handler was indexed last. The fix: skip exactIndex for
+    // col=0 and let line-ranking decide.
+
+    // Two candidates: both at bundle.js:1:0 (col=0 from the fallback).
+    // Stack frame at bundle.js:1:0 (also col=0). Without the fix, exactIndex
+    // would last-win on "bundle.js:1:0" and pick "beta". With the fix, we
+    // skip exactIndex entirely and rank by line — frequency tie, nodeId
+    // tiebreak picks "alpha".
+    const g = graph([
+      node("beta", "button", "B", { url: "https://app.com/bundle.js", line: 1, col: 0 }),
+      node("alpha", "button", "A", { url: "https://app.com/bundle.js", line: 1, col: 0 }),
+    ]);
+
+    correlateNetwork(g, [
+      req([
+        { scriptId: "1", url: "https://app.com/bundle.js", functionName: "f", lineNumber: 1, columnNumber: 0 },
+      ]),
+    ]);
+
+    expect(g.networkEdges).toHaveLength(1);
+    expect(g.networkEdges[0].triggerNodeId).toBe("alpha");
+  });
+
+  it("col=0 handler still wins when it's the only candidate (line-ranking handles it)", () => {
+    // Sanity check: a single col=0 handler should still match — the fall-through
+    // path picks it via line-only ranking with no ambiguity.
+    const g = graph([
+      node("only", "button", "Only", { url: "https://app.com/bundle.js", line: 1, col: 0 }),
+    ]);
+
+    correlateNetwork(g, [
+      req([
+        { scriptId: "1", url: "https://app.com/bundle.js", functionName: "f", lineNumber: 1, columnNumber: 0 },
+      ]),
+    ]);
+
+    expect(g.networkEdges).toHaveLength(1);
+    expect(g.networkEdges[0].triggerNodeId).toBe("only");
+  });
+
   it("non-script initiator still emits unmatched edge (A3 + A2 compose)", () => {
     const g = graph([
       node("h", "button", "B", { url: "https://app.com/bundle.js", line: 1, col: 100 }),

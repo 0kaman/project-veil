@@ -33,9 +33,18 @@ export function correlateNetwork(
         lineNumber: event.source.lineNumber,
         columnNumber: event.source.columnNumber,
       };
-      const exactKey = `${cand.scriptUrl}:${cand.lineNumber}:${cand.columnNumber}`;
       const lineKey = `${cand.scriptUrl}:${cand.lineNumber}`;
-      exactIndex.set(exactKey, cand);
+      // Only register in exactIndex when col is a real signal (>0). col=0
+      // is the fallback Stage 2 emits when CDP's [[FunctionLocation]] doesn't
+      // expose a column (bound functions, optimized-out source maps, certain
+      // V8 paths). Treating col=0 as "exact" causes collisions: many handlers
+      // → "url:line:0" → Map.set last-wins → arbitrary handler wins every
+      // stack frame that also happens to have col=0. Fall through to the
+      // line-ranking path instead.
+      if (cand.columnNumber > 0) {
+        const exactKey = `${cand.scriptUrl}:${cand.lineNumber}:${cand.columnNumber}`;
+        exactIndex.set(exactKey, cand);
+      }
       const list = lineIndex.get(lineKey);
       if (list) list.push(cand);
       else lineIndex.set(lineKey, [cand]);
