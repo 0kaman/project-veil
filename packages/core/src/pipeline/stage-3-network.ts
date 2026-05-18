@@ -1,5 +1,6 @@
 import type {
   BehaviorGraph,
+  CallFrame,
   NetworkRequest,
 } from "../graph/model.js";
 import { isFrameworkFrame, extractPath } from "./utils.js";
@@ -15,77 +16,65 @@ export function correlateNetwork(
   graph: BehaviorGraph,
   capturedRequests: NetworkRequest[],
 ): void {
-  // Build handler index: "url:line:col" → { nodeId, eventType }
-  // Also build line-only index as fallback for minified code
-  const exactIndex = new Map<string, { nodeId: string; eventType: string }>();
-  const lineIndex = new Map<string, { nodeId: string; eventType: string }>();
+  // Two-level handler index. Real production bundles compile every handler
+  // to a small set of lines (often just bundle.js:1), so a flat "first-wins"
+  // line index attributes every network request to whichever handler was
+  // indexed first. We keep ALL candidates per (url, line) and rank below.
+  const exactIndex = new Map<string, Candidate>();
+  const lineIndex = new Map<string, Candidate[]>();
 
   for (const [nodeId, node] of graph.nodes) {
     for (const event of node.events) {
       if (!event.source) continue;
-      const exactKey = `${event.source.scriptUrl}:${event.source.lineNumber}:${event.source.columnNumber}`;
-      const lineKey = `${event.source.scriptUrl}:${event.source.lineNumber}`;
-      exactIndex.set(exactKey, { nodeId, eventType: event.eventType });
-      // Only set line index if not already set (first wins)
-      if (!lineIndex.has(lineKey)) {
-        lineIndex.set(lineKey, { nodeId, eventType: event.eventType });
-      }
+      const cand: Candidate = {
+        nodeId,
+        eventType: event.eventType,
+        scriptUrl: event.source.scriptUrl,
+        lineNumber: event.source.lineNumber,
+        columnNumber: event.source.columnNumber,
+      };
+      const exactKey = `${cand.scriptUrl}:${cand.lineNumber}:${cand.columnNumber}`;
+      const lineKey = `${cand.scriptUrl}:${cand.lineNumber}`;
+      exactIndex.set(exactKey, cand);
+      const list = lineIndex.get(lineKey);
+      if (list) list.push(cand);
+      else lineIndex.set(lineKey, [cand]);
     }
   }
 
   for (const req of capturedRequests) {
     const reqPath = extractPath(req.url);
-    let matched = false;
+    let handler: Candidate | undefined;
 
     // Parser/other initiators have no useful stack — skip the lookup loop
     // and fall through to the unmatched emit below.
     if (req.initiatorType === "script" && req.initiatorStack) {
-      for (const frame of req.initiatorStack) {
-        if (!frame.url || isFrameworkFrame(frame.url)) continue;
+      handler = pickHandler(req.initiatorStack, exactIndex, lineIndex);
+    }
 
-        // Try exact match first
-        const exactKey = `${frame.url}:${frame.lineNumber}:${frame.columnNumber}`;
-        let handler = exactIndex.get(exactKey);
+    if (handler) {
+      graph.networkEdges.push({
+        triggerNodeId: handler.nodeId,
+        triggerEvent: handler.eventType,
+        request: { method: req.method, url: req.url },
+        ...(req.responseStatus != null && {
+          response: {
+            status: req.responseStatus,
+            contentType: req.responseContentType ?? "",
+          },
+        }),
+      });
 
-        // Fallback to line-only match
-        if (!handler) {
-          const lineKey = `${frame.url}:${frame.lineNumber}`;
-          handler = lineIndex.get(lineKey);
-        }
-
-        if (handler) {
-          graph.networkEdges.push({
-            triggerNodeId: handler.nodeId,
-            triggerEvent: handler.eventType,
-            request: { method: req.method, url: req.url },
-            ...(req.responseStatus != null && {
-              response: {
-                status: req.responseStatus,
-                contentType: req.responseContentType ?? "",
-              },
-            }),
-          });
-
-          // Set estimatedEffect on the matching event binding
-          const node = graph.nodes.get(handler.nodeId);
-          if (node) {
-            const event = node.events.find(
-              (e) => e.eventType === handler.eventType,
-            );
-            if (event) {
-              event.estimatedEffect = `${req.method} ${reqPath}`;
-            }
-          }
-
-          matched = true;
-          break;
-        }
+      const node = graph.nodes.get(handler.nodeId);
+      if (node) {
+        const event = node.events.find((e) => e.eventType === handler!.eventType);
+        if (event) event.estimatedEffect = `${req.method} ${reqPath}`;
       }
     }
 
     // Emit unmatched edge. triggerEvent reflects initiator type so consumers
     // can distinguish "script that we couldn't attribute" from "parser/other".
-    if (!matched) {
+    if (!handler) {
       graph.networkEdges.push({
         triggerNodeId: "",
         triggerEvent: req.initiatorType,
@@ -177,6 +166,79 @@ export function correlateNetwork(
       }
     }
   }
+}
+
+interface Candidate {
+  nodeId: string;
+  eventType: string;
+  scriptUrl: string;
+  lineNumber: number;
+  columnNumber: number;
+}
+
+/**
+ * Pick the best handler candidate for a given initiator stack.
+ *
+ * Strategy:
+ *   1. Walk every non-framework stack frame. If any frame matches a candidate
+ *      EXACTLY on (url, line, col), return it. This is the precise path —
+ *      Stage 2's introspection found the call site and the request initiator
+ *      tracked it back to the same location.
+ *   2. If no exact hit, gather all line-only candidates across all frames
+ *      and rank them by stack-URL frequency: a candidate whose scriptUrl
+ *      appears in MORE frames of the initiator stack is more likely to be
+ *      the real trigger (component-locality heuristic). This is what makes
+ *      the difference on minified bundles where many handlers share line 1
+ *      and column data is unreliable.
+ *   3. Stable tiebreak: lower nodeId wins. Eliminates the previous
+ *      first-wins behavior that depended on Map insertion order.
+ */
+function pickHandler(
+  stack: CallFrame[],
+  exactIndex: Map<string, Candidate>,
+  lineIndex: Map<string, Candidate[]>,
+): Candidate | undefined {
+  const usefulFrames = stack.filter((f) => f.url && !isFrameworkFrame(f.url));
+  if (usefulFrames.length === 0) return undefined;
+
+  // 1. Exact (line, col) match — highest precedence.
+  for (const frame of usefulFrames) {
+    const exactKey = `${frame.url}:${frame.lineNumber}:${frame.columnNumber}`;
+    const hit = exactIndex.get(exactKey);
+    if (hit) return hit;
+  }
+
+  // 2. Collect every line-only candidate referenced by any frame, deduped.
+  const seen = new Set<string>();
+  const candidates: Candidate[] = [];
+  for (const frame of usefulFrames) {
+    const lineKey = `${frame.url}:${frame.lineNumber}`;
+    const list = lineIndex.get(lineKey);
+    if (!list) continue;
+    for (const c of list) {
+      const id = `${c.nodeId}\0${c.eventType}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      candidates.push(c);
+    }
+  }
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+
+  // 3. Rank by stack-URL frequency, then by stable nodeId.
+  const stackUrlCounts = new Map<string, number>();
+  for (const frame of usefulFrames) {
+    stackUrlCounts.set(frame.url, (stackUrlCounts.get(frame.url) ?? 0) + 1);
+  }
+  candidates.sort((a, b) => {
+    const aScore = stackUrlCounts.get(a.scriptUrl) ?? 0;
+    const bScore = stackUrlCounts.get(b.scriptUrl) ?? 0;
+    if (aScore !== bScore) return bScore - aScore; // higher score first
+    if (a.nodeId < b.nodeId) return -1;
+    if (a.nodeId > b.nodeId) return 1;
+    return 0;
+  });
+  return candidates[0];
 }
 
 /** Check if a concrete pathname matches a parameterized pattern. */
