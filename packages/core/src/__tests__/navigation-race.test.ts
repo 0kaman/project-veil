@@ -214,13 +214,17 @@ function createMockPage(cdp: CDPClient) {
 
 // ── Stub infrastructure & pipeline stages ──
 
-// Mock network idle + DOM settle — they use real CDP timers which slow tests
+// Mock network idle + DOM settle — they use real CDP timers which slow tests.
+// Also mock waitForSettleOrNavigation: its internal calls to the above bind
+// via in-module closure and bypass the mock entries on the same module, so
+// without an explicit override the real (slow) settle waits fire.
 vi.mock("../browser/page.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../browser/page.js")>();
   return {
     ...orig,
     waitForNetworkIdle: vi.fn(async () => {}),
     waitForDomSettle: vi.fn(async () => {}),
+    waitForSettleOrNavigation: vi.fn(async () => {}),
   };
 });
 

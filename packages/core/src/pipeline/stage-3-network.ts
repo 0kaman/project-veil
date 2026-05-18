@@ -34,13 +34,12 @@ export function correlateNetwork(
   }
 
   for (const req of capturedRequests) {
-    // Only correlate script-initiated requests
-    if (req.initiatorType !== "script") continue;
-
     const reqPath = extractPath(req.url);
     let matched = false;
 
-    if (req.initiatorStack) {
+    // Parser/other initiators have no useful stack — skip the lookup loop
+    // and fall through to the unmatched emit below.
+    if (req.initiatorType === "script" && req.initiatorStack) {
       for (const frame of req.initiatorStack) {
         if (!frame.url || isFrameworkFrame(frame.url)) continue;
 
@@ -84,11 +83,12 @@ export function correlateNetwork(
       }
     }
 
-    // Unmatched script-initiated request
+    // Emit unmatched edge. triggerEvent reflects initiator type so consumers
+    // can distinguish "script that we couldn't attribute" from "parser/other".
     if (!matched) {
       graph.networkEdges.push({
         triggerNodeId: "",
-        triggerEvent: "script",
+        triggerEvent: req.initiatorType,
         request: { method: req.method, url: req.url },
         ...(req.responseStatus != null && {
           response: {

@@ -178,6 +178,43 @@ export function waitForDomSettle(cdp: CDPClient, quietMs = 150, maxMs = 2_000): 
   });
 }
 
+/**
+ * Wait for network idle + DOM settle, but abort early if a top-level
+ * frame navigation fires. Subframe navigations (iframes) are ignored.
+ *
+ * Cleanup is guaranteed via try/finally: if either settle primitive throws,
+ * the Page.frameNavigated listener is still removed. The previous
+ * `.then().then()` chain had no `.catch()`, so a settle-throw left the
+ * listener dangling and any caller awaiting this promise hung forever.
+ */
+export async function waitForSettleOrNavigation(cdp: CDPClient): Promise<void> {
+  let settled = false;
+  let resolveNav: (() => void) | null = null;
+
+  const onNav = (params: unknown) => {
+    const frame = (params as { frame?: { parentId?: string } })?.frame;
+    if (frame?.parentId) return;
+    if (settled) return;
+    settled = true;
+    resolveNav?.();
+  };
+
+  cdp.on("Page.frameNavigated", onNav);
+
+  try {
+    const navPromise = new Promise<void>((r) => { resolveNav = r; });
+    const settlePromise = (async () => {
+      await waitForNetworkIdle(cdp);
+      await waitForDomSettle(cdp);
+      if (!settled) settled = true;
+    })();
+
+    await Promise.race([navPromise, settlePromise.catch(() => {})]);
+  } finally {
+    cdp.off("Page.frameNavigated", onNav);
+  }
+}
+
 export async function waitForNetworkIdle(cdp: CDPClient): Promise<void> {
   let inflight = 0;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;

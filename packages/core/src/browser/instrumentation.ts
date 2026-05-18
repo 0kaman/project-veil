@@ -56,6 +56,15 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
   var navigations = [];
   var NETWORK_CAP = 500;
   var NAV_CAP = 100;
+  var LISTENER_CAP = 2000;
+
+  // FIFO push: when arr is at cap, drop oldest entry to keep the most recent.
+  // Previous implementation dropped NEW entries, causing long sessions to
+  // retain stale initial-page traffic while recent activity went uncaptured.
+  function pushCapped(arr, item, cap) {
+    if (arr.length >= cap) arr.shift();
+    arr.push(item);
+  }
 
   // --- Listener registry ---
   var origAddEventListener = EventTarget.prototype.addEventListener;
@@ -68,13 +77,13 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
       try { id = el.id || ''; } catch(e) {}
       var stack = '';
       try { stack = new Error().stack || ''; } catch(e) {}
-      listeners.push({
+      pushCapped(listeners, {
         ref: typeof WeakRef !== 'undefined' ? new WeakRef(el) : { deref: function() { return el; } },
         eventType: type,
         stack: stack,
         elementTag: tag,
         elementId: id
-      });
+      }, LISTENER_CAP);
     }
     return origAddEventListener.apply(this, arguments);
   };
@@ -82,22 +91,20 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
   // --- Network proxy: fetch ---
   var origFetch = window.fetch;
   window.fetch = function(input, init) {
-    if (networkCalls.length < NETWORK_CAP) {
-      var method = (init && init.method) ? init.method.toUpperCase() : 'GET';
-      var url = '';
-      try {
-        url = typeof input === 'string' ? input : (input && input.url ? input.url : String(input));
-      } catch(e) {}
-      var stack = '';
-      try { stack = new Error().stack || ''; } catch(e) {}
-      networkCalls.push({
-        type: 'fetch',
-        method: method,
-        url: url,
-        stack: stack,
-        timestamp: Date.now()
-      });
-    }
+    var method = (init && init.method) ? init.method.toUpperCase() : 'GET';
+    var url = '';
+    try {
+      url = typeof input === 'string' ? input : (input && input.url ? input.url : String(input));
+    } catch(e) {}
+    var stack = '';
+    try { stack = new Error().stack || ''; } catch(e) {}
+    pushCapped(networkCalls, {
+      type: 'fetch',
+      method: method,
+      url: url,
+      stack: stack,
+      timestamp: Date.now()
+    }, NETWORK_CAP);
     return origFetch.apply(this, arguments);
   };
 
@@ -112,17 +119,15 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
   };
 
   XMLHttpRequest.prototype.send = function() {
-    if (networkCalls.length < NETWORK_CAP) {
-      var stack = '';
-      try { stack = new Error().stack || ''; } catch(e) {}
-      networkCalls.push({
-        type: 'xhr',
-        method: this.__veil_method || 'GET',
-        url: this.__veil_url || '',
-        stack: stack,
-        timestamp: Date.now()
-      });
-    }
+    var stack = '';
+    try { stack = new Error().stack || ''; } catch(e) {}
+    pushCapped(networkCalls, {
+      type: 'xhr',
+      method: this.__veil_method || 'GET',
+      url: this.__veil_url || '',
+      stack: stack,
+      timestamp: Date.now()
+    }, NETWORK_CAP);
     return origXHRSend.apply(this, arguments);
   };
 
@@ -131,30 +136,26 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
   var origReplaceState = history.replaceState;
 
   history.pushState = function(state, title, url) {
-    if (navigations.length < NAV_CAP) {
-      var stack = '';
-      try { stack = new Error().stack || ''; } catch(e) {}
-      navigations.push({
-        type: 'pushState',
-        url: url ? String(url) : '',
-        stack: stack,
-        timestamp: Date.now()
-      });
-    }
+    var stack = '';
+    try { stack = new Error().stack || ''; } catch(e) {}
+    pushCapped(navigations, {
+      type: 'pushState',
+      url: url ? String(url) : '',
+      stack: stack,
+      timestamp: Date.now()
+    }, NAV_CAP);
     return origPushState.apply(this, arguments);
   };
 
   history.replaceState = function(state, title, url) {
-    if (navigations.length < NAV_CAP) {
-      var stack = '';
-      try { stack = new Error().stack || ''; } catch(e) {}
-      navigations.push({
-        type: 'replaceState',
-        url: url ? String(url) : '',
-        stack: stack,
-        timestamp: Date.now()
-      });
-    }
+    var stack = '';
+    try { stack = new Error().stack || ''; } catch(e) {}
+    pushCapped(navigations, {
+      type: 'replaceState',
+      url: url ? String(url) : '',
+      stack: stack,
+      timestamp: Date.now()
+    }, NAV_CAP);
     return origReplaceState.apply(this, arguments);
   };
 

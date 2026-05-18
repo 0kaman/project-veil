@@ -243,14 +243,30 @@ function buildVanillaGroups(graph: BehaviorGraph): void {
 }
 
 function containerBasedGrouping(graph: BehaviorGraph): void {
-  for (const [, node] of graph.nodes) {
+  // Build a stable ordering of container candidates:
+  //   - by tree depth DESC (innermost first — inner forms claim their descendants
+  //     before an outer <main> sweeps them up)
+  //   - then by node id ASC (tiebreak — deterministic across runs)
+  // Without this, iteration order of `graph.nodes` (Map insertion order) determines
+  // grouping, and identical input can produce different output across runs.
+  const depths = computeDepths(graph);
+  const candidates: Array<{ id: string; depth: number }> = [];
+  for (const [id, node] of graph.nodes) {
     if (!CONTAINER_GROUPING_ROLES.has(node.role)) continue;
-    if (node.componentId) continue; // Already assigned
+    candidates.push({ id, depth: depths.get(id) ?? 0 });
+  }
+  candidates.sort((a, b) => {
+    if (a.depth !== b.depth) return b.depth - a.depth;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
 
-    // Collect ungrouped descendants
+  for (const { id } of candidates) {
+    const node = graph.nodes.get(id);
+    if (!node) continue;
+    if (node.componentId) continue;
+
     const memberIds: string[] = [];
     collectUngroupedDescendants(graph, node.id, memberIds);
-
     if (memberIds.length === 0) continue;
 
     const namePart = node.name
@@ -258,8 +274,6 @@ function containerBasedGrouping(graph: BehaviorGraph): void {
       : String(graph.componentGroups.length + 1);
 
     const groupId = `cg-vanilla-${node.role}-${namePart}`;
-
-    // Include the container node itself
     const allMembers = [node.id, ...memberIds];
 
     const group: ComponentGroup = {
@@ -270,11 +284,27 @@ function containerBasedGrouping(graph: BehaviorGraph): void {
     };
     graph.componentGroups.push(group);
 
-    for (const id of allMembers) {
-      const n = graph.nodes.get(id);
+    for (const memberId of allMembers) {
+      const n = graph.nodes.get(memberId);
       if (n && !n.componentId) n.componentId = groupId;
     }
   }
+}
+
+/** Compute depth of every node from the graph roots. Disconnected nodes get 0. */
+function computeDepths(graph: BehaviorGraph): Map<string, number> {
+  const depths = new Map<string, number>();
+  const visit = (nodeId: string, depth: number): void => {
+    if (depths.has(nodeId)) return; // already visited via a shorter path
+    depths.set(nodeId, depth);
+    const node = graph.nodes.get(nodeId);
+    if (!node) return;
+    for (const childId of node.children) {
+      visit(childId, depth + 1);
+    }
+  };
+  for (const rootId of graph.roots) visit(rootId, 0);
+  return depths;
 }
 
 function collectUngroupedDescendants(

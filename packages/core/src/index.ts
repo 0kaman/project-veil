@@ -28,7 +28,7 @@ export { inferSemantics } from "./pipeline/stage-5-semantics.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
-import { waitForNetworkIdle, waitForDomSettle } from "./browser/page.js";
+import { waitForNetworkIdle, waitForDomSettle, waitForSettleOrNavigation } from "./browser/page.js";
 import { performAuthFlow, type AuthOptions, type AuthResult } from "./browser/auth.js";
 import type { CDPClient } from "./browser/cdp-client.js";
 import { buildGraphFromAXTree, patchGraphFromDiff } from "./pipeline/stage-1-axtree.js";
@@ -123,20 +123,26 @@ export class VeilPage {
     // Suppress mutation watcher — interact() owns the update cycle
     this.mutationWatcher?.suppress();
 
-    // Navigation detector
+    // Navigation detector — top-frame only. Subframe (iframe) navigations
+    // are common on real pages (ad networks, OAuth popups, tracking pixels)
+    // and must not trigger a full-page rebuild.
     let navigated = false;
-    const onNav = () => { navigated = true; };
+    const onNav = (params: unknown) => {
+      const frame = (params as { frame?: { parentId?: string } })?.frame;
+      if (frame?.parentId) return;
+      navigated = true;
+    };
     this.page.cdp.on("Page.frameNavigated", onNav);
 
     try {
       // Dispatch the interaction via CDP
       await dispatchInteraction(this.page.cdp, node.backendDOMNodeId, action);
 
-      // Navigation-aware settle: wait for network idle OR frameNavigated,
-      // whichever comes first. Form POSTs with 302 redirects fire
-      // frameNavigated after the POST completes but before the new page
-      // finishes loading — we must not wait the full idle timeout.
-      await this.waitForSettleOrNavigation();
+      // Navigation-aware settle: wait for network idle OR top-level
+      // frameNavigated, whichever comes first. Form POSTs with 302 redirects
+      // fire frameNavigated after the POST completes but before the new
+      // page finishes loading — we must not wait the full idle timeout.
+      await waitForSettleOrNavigation(this.page.cdp);
 
       // Double-check: also detect navigation via URL change (catches cases
       // where frameNavigated fired after the waits resolved)
@@ -203,32 +209,6 @@ export class VeilPage {
       this.page.cdp.off("Page.frameNavigated", onNav);
       this.mutationWatcher?.unsuppress();
     }
-  }
-
-  /**
-   * Wait for network idle + DOM settle, but abort early if a full-page
-   * navigation fires (Page.frameNavigated). This prevents the 2s idle
-   * timer from masking a form POST → 302 redirect sequence.
-   */
-  private waitForSettleOrNavigation(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        this.page.cdp.off("Page.frameNavigated", onNav);
-        resolve();
-      };
-
-      // If navigation fires, stop waiting — the old page is gone
-      const onNav = () => done();
-      this.page.cdp.on("Page.frameNavigated", onNav);
-
-      // Normal settle path
-      waitForNetworkIdle(this.page.cdp)
-        .then(() => waitForDomSettle(this.page.cdp))
-        .then(done);
-    });
   }
 
   onGraphChange(callback: GraphChangeCallback): () => void {

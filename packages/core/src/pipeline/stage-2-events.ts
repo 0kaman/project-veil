@@ -42,6 +42,18 @@ interface CDPEventListener {
 interface ReactHandlerInfo {
   eventType: string;
   handlerString: string;
+  handlerKey: string;
+}
+
+interface CDPInternalProperty {
+  name: string;
+  value?: {
+    value?: {
+      scriptId?: string;
+      lineNumber?: number;
+      columnNumber?: number;
+    };
+  };
 }
 
 export async function collectScriptUrls(cdp: CDPClient): Promise<Map<string, string>> {
@@ -84,6 +96,8 @@ export async function enrichGraphWithEvents(
       // Node may have been removed from DOM between AXTree snapshot and now — skip
     }
   }
+
+  await clearReactHandlerRegistry(cdp);
 }
 
 export async function enrichSpecificNodesWithEvents(
@@ -113,6 +127,8 @@ export async function enrichSpecificNodesWithEvents(
       // Node may have been removed from DOM between AXTree snapshot and now — skip
     }
   }
+
+  await clearReactHandlerRegistry(cdp);
 }
 
 async function getNodeEvents(
@@ -135,7 +151,7 @@ async function getNodeEvents(
   events.push(...directEvents);
 
   // 2. React Fiber-based handlers
-  const reactEvents = await getReactHandlers(cdp, objectId);
+  const reactEvents = await getReactHandlers(cdp, objectId, scriptUrls);
   events.push(...reactEvents);
 
   // Release the object to avoid memory leaks
@@ -205,19 +221,24 @@ async function getDirectListeners(
 async function getReactHandlers(
   cdp: CDPClient,
   objectId: string,
+  scriptUrls: Map<string, string>,
 ): Promise<EventBinding[]> {
+  // Walk the React fiber and stash each event handler on a temp window key
+  // so we can introspect its [[FunctionLocation]] via Runtime.getProperties.
   const result = (await cdp.send("Runtime.callFunctionOn", {
     objectId,
     functionDeclaration: `function() {
       const el = this;
       const handlers = [];
 
-      // Find React Fiber key
       const fiberKey = Object.keys(el).find(k => k.startsWith('__reactFiber$'));
       if (!fiberKey) return handlers;
 
+      window.__veil_react_handlers__ = window.__veil_react_handlers__ || {};
+      const registry = window.__veil_react_handlers__;
+      const baseId = '_v' + (Object.keys(registry).length);
+
       let fiber = el[fiberKey];
-      // Walk up Fiber tree (max 10 levels) to find event props
       for (let i = 0; i < 10 && fiber; i++) {
         const props = fiber.memoizedProps;
         if (props) {
@@ -231,14 +252,13 @@ async function getReactHandlers(
           };
           for (const [prop, eventType] of Object.entries(eventMap)) {
             if (typeof props[prop] === 'function') {
-              try {
-                handlers.push({ eventType, handlerString: props[prop].toString().slice(0, 500) });
-              } catch {
-                handlers.push({ eventType, handlerString: '' });
-              }
+              const handlerKey = baseId + '_' + handlers.length;
+              registry[handlerKey] = props[prop];
+              let handlerString = '';
+              try { handlerString = props[prop].toString().slice(0, 500); } catch {}
+              handlers.push({ eventType, handlerString, handlerKey });
             }
           }
-          // Stop at first fiber with event props to avoid duplicates
           if (handlers.length > 0) break;
         }
         fiber = fiber.return;
@@ -249,10 +269,78 @@ async function getReactHandlers(
   })) as { result: { value?: ReactHandlerInfo[] } };
 
   const reactHandlers = result.result?.value ?? [];
-  return reactHandlers.map((h) => ({
-    eventType: h.eventType,
-    category: categorizeHandler(h.handlerString),
-  }));
+  if (reactHandlers.length === 0) return [];
+
+  const events: EventBinding[] = [];
+
+  for (const handler of reactHandlers) {
+    const source = await resolveHandlerLocation(cdp, handler.handlerKey, scriptUrls);
+    events.push({
+      eventType: handler.eventType,
+      category: categorizeHandler(handler.handlerString),
+      ...(source && { source }),
+    });
+  }
+
+  return events;
+}
+
+/**
+ * Introspect a stashed handler's [[FunctionLocation]] via CDP.
+ * Returns the EventBinding.source if scriptId/line/col can be recovered.
+ */
+async function resolveHandlerLocation(
+  cdp: CDPClient,
+  handlerKey: string,
+  scriptUrls: Map<string, string>,
+): Promise<EventBinding["source"] | undefined> {
+  try {
+    const evalResult = (await cdp.send("Runtime.evaluate", {
+      expression: `window.__veil_react_handlers__ && window.__veil_react_handlers__[${JSON.stringify(handlerKey)}]`,
+      returnByValue: false,
+    })) as { result?: { objectId?: string } };
+
+    const handlerObjectId = evalResult.result?.objectId;
+    if (!handlerObjectId) return undefined;
+
+    try {
+      const propsResult = (await cdp.send("Runtime.getProperties", {
+        objectId: handlerObjectId,
+        ownProperties: false,
+        accessorPropertiesOnly: false,
+        generatePreview: false,
+      })) as { internalProperties?: CDPInternalProperty[] };
+
+      const locProp = propsResult.internalProperties?.find(
+        (p) => p.name === "[[FunctionLocation]]",
+      );
+      const loc = locProp?.value?.value;
+      if (!loc?.scriptId) return undefined;
+
+      return {
+        scriptUrl: scriptUrls.get(loc.scriptId) ?? `script:${loc.scriptId}`,
+        lineNumber: loc.lineNumber ?? 0,
+        columnNumber: loc.columnNumber ?? 0,
+        functionName: "",
+      };
+    } finally {
+      await cdp
+        .send("Runtime.releaseObject", { objectId: handlerObjectId })
+        .catch(() => {});
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+/** Best-effort cleanup of the temp registry left behind by getReactHandlers. */
+async function clearReactHandlerRegistry(cdp: CDPClient): Promise<void> {
+  await cdp
+    .send("Runtime.evaluate", {
+      expression: "delete window.__veil_react_handlers__",
+      returnByValue: true,
+    })
+    .catch(() => {});
 }
 
 export function categorizeHandler(
