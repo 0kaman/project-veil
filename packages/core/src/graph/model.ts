@@ -69,17 +69,6 @@ export interface ComponentGroup {
   semanticLabel?: SemanticLabel;           // Populated by Stage 5
 }
 
-export interface VeilConfig {
-  llm?: {
-    enabled: boolean;
-    apiKey: string;
-    model?: string;               // default: "claude-sonnet-4-20250514"
-    baseUrl?: string;             // default: "https://api.anthropic.com"
-    maxTokens?: number;           // default: 4096
-    confidenceThreshold?: number; // default: 0.5 — LLM only consulted for labels below this
-  };
-}
-
 export interface BehaviorNode {
   id: string;
   role: string;

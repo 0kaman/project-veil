@@ -1,256 +1,224 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createServer, type Server, type Socket } from "node:net";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-vi.mock("../daemon.js", () => ({
-  getBaseUrl: () => "http://127.0.0.1:3100",
-}));
+// Set the socket path BEFORE importing daemon-protocol
+let tmpDir: string;
+let socketPath: string;
 
-import { VeilClient } from "../client.js";
+async function setupSocketPath(): Promise<void> {
+  tmpDir = await mkdtemp(join(tmpdir(), "veil-test-"));
+  socketPath = join(tmpDir, "daemon.sock");
+  process.env.VEIL_SOCKET = socketPath;
+}
 
-describe("VeilClient", () => {
-  let client: VeilClient;
-  let fetchMock: ReturnType<typeof vi.fn>;
+await setupSocketPath();
 
-  beforeEach(() => {
-    fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    client = new VeilClient();
-  });
+const { VeilClient } = await import("../client.js");
+const { SOCKET_PATH } = await import("../daemon-protocol.js");
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+interface ServerMessage {
+  rid: string;
+  body: unknown;
+}
 
-  // Helper to create a mock Response
-  function mockResponse(body: any, status = 200, contentType = "application/json"): Response {
-    const text = typeof body === "string" ? body : JSON.stringify(body);
-    return new Response(text, {
-      status,
-      headers: { "Content-Type": contentType },
+function startMockServer(
+  onRequest: (msg: ServerMessage, socket: Socket) => void,
+): Promise<Server> {
+  return new Promise((resolve, reject) => {
+    const server = createServer((socket) => {
+      let buf = "";
+      socket.on("data", (chunk) => {
+        buf += chunk.toString("utf8");
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) !== -1) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          const msg = JSON.parse(line) as ServerMessage;
+          onRequest(msg, socket);
+        }
+      });
     });
-  }
+    server.once("error", reject);
+    server.listen(SOCKET_PATH, () => resolve(server));
+  });
+}
 
-  function mockErrorResponse(status: number, code: string, message: string): Response {
-    return new Response(
-      JSON.stringify({ error: { code, message } }),
-      { status, headers: { "Content-Type": "application/json" } },
-    );
-  }
+function reply(socket: Socket, rid: string, result: unknown): void {
+  socket.write(JSON.stringify({ rid, ok: true, result }) + "\n");
+}
 
-  // ---- openSession ----
+function replyError(socket: Socket, rid: string, code: string, message: string): void {
+  socket.write(JSON.stringify({ rid, ok: false, error: { code, message } }) + "\n");
+}
 
-  it("openSession sends POST /api/sessions and returns session info", async () => {
+describe("VeilClient (Unix socket)", () => {
+  let server: Server;
+  let client: InstanceType<typeof VeilClient>;
+
+  afterEach(async () => {
+    client?.close();
+    await new Promise<void>((r) => server?.close(() => r()));
+    await rm(socketPath, { force: true }).catch(() => {});
+  });
+
+  it("openSession sends 'openSession' op and returns session info", async () => {
     const sessionInfo = { id: "abc-123", url: "https://example.com", createdAt: 1000 };
-    fetchMock.mockResolvedValueOnce(mockResponse(sessionInfo, 201));
+    let received: ServerMessage | null = null;
 
+    server = await startMockServer((msg, sock) => {
+      received = msg;
+      reply(sock, msg.rid, sessionInfo);
+    });
+
+    client = new VeilClient();
     const result = await client.openSession("https://example.com");
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe("http://127.0.0.1:3100/api/sessions");
-    expect(opts.method).toBe("POST");
-    expect(JSON.parse(opts.body)).toEqual({ url: "https://example.com" });
+    expect(received).not.toBeNull();
+    expect(received!.body).toEqual({ op: "openSession", url: "https://example.com" });
     expect(result).toEqual(sessionInfo);
   });
 
-  it("openSession throws on server error with server's error message", async () => {
-    fetchMock.mockResolvedValueOnce(
-      mockErrorResponse(429, "MAX_SESSIONS", "Too many sessions"),
-    );
+  it("openSession rejects with server's error message", async () => {
+    server = await startMockServer((msg, sock) => {
+      replyError(sock, msg.rid, "MAX_SESSIONS", "Too many sessions");
+    });
 
-    await expect(client.openSession("https://example.com")).rejects.toThrow(
-      "Too many sessions",
-    );
+    client = new VeilClient();
+    await expect(client.openSession("https://example.com")).rejects.toThrow("Too many sessions");
   });
 
-  // ---- listSessions ----
-
-  it("listSessions sends GET /api/sessions and returns array", async () => {
+  it("listSessions returns array", async () => {
     const sessions = [
       { id: "a", url: "https://a.com", createdAt: 1 },
       { id: "b", url: "https://b.com", createdAt: 2 },
     ];
-    fetchMock.mockResolvedValueOnce(mockResponse(sessions));
 
-    const result = await client.listSessions();
+    server = await startMockServer((msg, sock) => {
+      reply(sock, msg.rid, sessions);
+    });
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url] = fetchMock.mock.calls[0];
-    expect(url).toBe("http://127.0.0.1:3100/api/sessions");
-    expect(result).toEqual(sessions);
+    client = new VeilClient();
+    expect(await client.listSessions()).toEqual(sessions);
   });
 
-  // ---- closeSession ----
+  it("closeSession sends 'closeSession' op with id", async () => {
+    let received: ServerMessage | null = null;
+    server = await startMockServer((msg, sock) => {
+      received = msg;
+      reply(sock, msg.rid, { ok: true });
+    });
 
-  it("closeSession sends DELETE /api/sessions/:id", async () => {
-    fetchMock.mockResolvedValueOnce(mockResponse({ ok: true }));
-
+    client = new VeilClient();
     await client.closeSession("sess-1");
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe("http://127.0.0.1:3100/api/sessions/sess-1");
-    expect(opts.method).toBe("DELETE");
+    expect(received!.body).toEqual({ op: "closeSession", id: "sess-1" });
   });
 
-  // ---- closeAllSessions ----
-
-  it("closeAllSessions lists then deletes each session", async () => {
+  it("closeAllSessions lists then closes each", async () => {
     const sessions = [
       { id: "x", url: "https://x.com", createdAt: 1 },
       { id: "y", url: "https://y.com", createdAt: 2 },
     ];
+    const received: ServerMessage[] = [];
 
-    // First call: listSessions GET
-    fetchMock.mockResolvedValueOnce(mockResponse(sessions));
-    // Subsequent calls: DELETE for each session
-    fetchMock.mockResolvedValueOnce(mockResponse({ ok: true }));
-    fetchMock.mockResolvedValueOnce(mockResponse({ ok: true }));
+    server = await startMockServer((msg, sock) => {
+      received.push(msg);
+      const body = msg.body as { op: string };
+      if (body.op === "listSessions") {
+        reply(sock, msg.rid, sessions);
+      } else {
+        reply(sock, msg.rid, { ok: true });
+      }
+    });
 
+    client = new VeilClient();
     await client.closeAllSessions();
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    // First call is list
-    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:3100/api/sessions");
-    // Next two are deletes (order may vary due to Promise.all)
-    const deleteUrls = [fetchMock.mock.calls[1][0], fetchMock.mock.calls[2][0]];
-    expect(deleteUrls).toContain("http://127.0.0.1:3100/api/sessions/x");
-    expect(deleteUrls).toContain("http://127.0.0.1:3100/api/sessions/y");
+    expect(received).toHaveLength(3);
+    expect((received[0].body as { op: string }).op).toBe("listSessions");
+    const closeOps = received.slice(1).map((r) => r.body) as Array<{ op: string; id: string }>;
+    expect(closeOps.map((o) => o.id).sort()).toEqual(["x", "y"]);
   });
 
-  // ---- getGraphCompact ----
-
-  it("getGraphCompact sends GET and returns text", async () => {
+  it("getGraphCompact returns text", async () => {
     const compactText = 'PAGE https://example.com "Example"\nBTN "Click me" [click]\n';
-    fetchMock.mockResolvedValueOnce(mockResponse(compactText, 200, "text/plain"));
+    server = await startMockServer((msg, sock) => reply(sock, msg.rid, compactText));
 
-    const result = await client.getGraphCompact("s1");
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "http://127.0.0.1:3100/api/sessions/s1/graph/compact",
-    );
-    expect(result).toBe(compactText);
+    client = new VeilClient();
+    expect(await client.getGraphCompact("s1")).toBe(compactText);
   });
 
-  // ---- getGraphJSON ----
-
-  it("getGraphJSON sends GET and returns object", async () => {
+  it("getGraphJSON returns object", async () => {
     const graph = { graph: { nodes: [], edges: [] } };
-    fetchMock.mockResolvedValueOnce(mockResponse(graph));
+    server = await startMockServer((msg, sock) => reply(sock, msg.rid, graph));
 
-    const result = await client.getGraphJSON("s1");
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "http://127.0.0.1:3100/api/sessions/s1/graph",
-    );
-    expect(result).toEqual(graph);
+    client = new VeilClient();
+    expect(await client.getGraphJSON("s1")).toEqual(graph);
   });
 
-  // ---- getAllNodes ----
+  it("getAllNodes returns array", async () => {
+    const nodes = [{ id: "1", role: "button", name: "Click" }];
+    server = await startMockServer((msg, sock) => reply(sock, msg.rid, nodes));
 
-  it("getAllNodes sends GET and returns array of nodes", async () => {
-    const nodes = [
-      { id: "1", role: "button", name: "Click me" },
-      { id: "2", role: "textbox", name: "Search" },
-    ];
-    fetchMock.mockResolvedValueOnce(mockResponse(nodes));
-
-    const result = await client.getAllNodes("s1");
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "http://127.0.0.1:3100/api/sessions/s1/graph/nodes",
-    );
-    expect(result).toEqual(nodes);
+    client = new VeilClient();
+    expect(await client.getAllNodes("s1")).toEqual(nodes);
   });
 
-  // ---- getNode ----
+  it("getNode returns a single node", async () => {
+    const node = { id: "1", role: "button", name: "Click" };
+    let received: ServerMessage | null = null;
+    server = await startMockServer((msg, sock) => {
+      received = msg;
+      reply(sock, msg.rid, node);
+    });
 
-  it("getNode sends GET and returns a single node", async () => {
-    const node = { id: "1", role: "button", name: "Click me" };
-    fetchMock.mockResolvedValueOnce(mockResponse(node));
-
-    const result = await client.getNode("s1", "1");
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "http://127.0.0.1:3100/api/sessions/s1/graph/nodes/1",
-    );
-    expect(result).toEqual(node);
+    client = new VeilClient();
+    expect(await client.getNode("s1", "1")).toEqual(node);
+    expect(received!.body).toEqual({ op: "getNode", id: "s1", nodeId: "1" });
   });
 
-  // ---- interact ----
-
-  it("interact sends POST then GET compact, returns text", async () => {
-    const graphJGF = { graph: {} };
+  it("interact returns compact text", async () => {
     const compactText = 'PAGE https://example.com "Example"\n';
+    let received: ServerMessage | null = null;
+    server = await startMockServer((msg, sock) => {
+      received = msg;
+      reply(sock, msg.rid, compactText);
+    });
 
-    // First call: POST interact
-    fetchMock.mockResolvedValueOnce(mockResponse(graphJGF));
-    // Second call: GET compact
-    fetchMock.mockResolvedValueOnce(mockResponse(compactText, 200, "text/plain"));
-
-    const result = await client.interact("s1", "1", { action: "click" } as any);
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    // First call is POST interact
-    const [interactUrl, interactOpts] = fetchMock.mock.calls[0];
-    expect(interactUrl).toBe("http://127.0.0.1:3100/api/sessions/s1/interact");
-    expect(interactOpts.method).toBe("POST");
-    expect(JSON.parse(interactOpts.body)).toEqual({
+    client = new VeilClient();
+    const result = await client.interact("s1", "1", { action: "click" });
+    expect(result).toBe(compactText);
+    expect(received!.body).toEqual({
+      op: "interact",
+      id: "s1",
       nodeId: "1",
       action: { action: "click" },
     });
-    // Second call is GET compact
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      "http://127.0.0.1:3100/api/sessions/s1/graph/compact",
-    );
-    expect(result).toBe(compactText);
   });
 
-  // ---- navigate ----
-
-  it("navigate sends POST then GET compact, returns text", async () => {
-    const navResponse = { session: {}, graph: {} };
+  it("navigate returns compact text for new page", async () => {
     const compactText = 'PAGE https://other.com "Other"\n';
+    let received: ServerMessage | null = null;
+    server = await startMockServer((msg, sock) => {
+      received = msg;
+      reply(sock, msg.rid, compactText);
+    });
 
-    // First call: POST navigate
-    fetchMock.mockResolvedValueOnce(mockResponse(navResponse));
-    // Second call: GET compact
-    fetchMock.mockResolvedValueOnce(mockResponse(compactText, 200, "text/plain"));
-
+    client = new VeilClient();
     const result = await client.navigate("s1", "https://other.com");
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [navUrl, navOpts] = fetchMock.mock.calls[0];
-    expect(navUrl).toBe("http://127.0.0.1:3100/api/sessions/s1/navigate");
-    expect(navOpts.method).toBe("POST");
-    expect(JSON.parse(navOpts.body)).toEqual({ url: "https://other.com" });
-    // Second call is GET compact
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      "http://127.0.0.1:3100/api/sessions/s1/graph/compact",
-    );
     expect(result).toBe(compactText);
+    expect(received!.body).toEqual({ op: "navigate", id: "s1", url: "https://other.com" });
   });
 
-  // ---- Error handling ----
+  it("propagates SESSION_NOT_FOUND error", async () => {
+    server = await startMockServer((msg, sock) => {
+      replyError(sock, msg.rid, "SESSION_NOT_FOUND", 'Session "abc" not found');
+    });
 
-  it("throws with HTTP status when server returns non-JSON error", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response("Internal Server Error", { status: 500 }),
-    );
-
-    await expect(client.listSessions()).rejects.toThrow("HTTP 500");
-  });
-
-  it("throws with server error message when available", async () => {
-    fetchMock.mockResolvedValueOnce(
-      mockErrorResponse(404, "SESSION_NOT_FOUND", "Session \"abc\" not found"),
-    );
-
-    await expect(client.getGraphCompact("abc")).rejects.toThrow(
-      'Session "abc" not found',
-    );
+    client = new VeilClient();
+    await expect(client.getGraphCompact("abc")).rejects.toThrow('Session "abc" not found');
   });
 });

@@ -17,7 +17,6 @@ export type {
   ApiEndpoint,
   ComponentGroup,
   SemanticLabel,
-  VeilConfig,
 } from "./graph/model.js";
 export { VeilError } from "./graph/model.js";
 export { serializeCompactText, serializeJGF } from "./graph/serializer.js";
@@ -40,7 +39,7 @@ import { MutationWatcher } from "./browser/mutation-watcher.js";
 import { dispatchInteraction } from "./browser/interactions.js";
 import { buildDisplayIdRegistry } from "./graph/display-ids.js";
 import { queryNodes } from "./graph/query.js";
-import type { BehaviorGraph, BehaviorNode, InteractAction, NodeFilter, GraphDiff, GraphChangeCallback, VeilConfig } from "./graph/model.js";
+import type { BehaviorGraph, BehaviorNode, InteractAction, NodeFilter, GraphDiff, GraphChangeCallback } from "./graph/model.js";
 import { VeilError } from "./graph/model.js";
 import { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 import { groupComponents, regroupComponents } from "./pipeline/stage-4-components.js";
@@ -49,7 +48,6 @@ import { inferSemantics, reinferSemantics } from "./pipeline/stage-5-semantics.j
 export class VeilPage {
   private page: PageHandle;
   private url: string;
-  private config?: VeilConfig;
   private cachedGraph: BehaviorGraph | null = null;
   private lastSnapshot: DiffableSnapshot | null = null;
   private graphBuildPromise: Promise<BehaviorGraph> | null = null;
@@ -59,10 +57,9 @@ export class VeilPage {
   private updateInProgress = false;
   private pendingUpdate = false;
 
-  constructor(page: PageHandle, url: string, config?: VeilConfig) {
+  constructor(page: PageHandle, url: string) {
     this.page = page;
     this.url = url;
-    this.config = config;
   }
 
   /** Public entry — deduplicates concurrent calls via shared promise. */
@@ -99,7 +96,7 @@ export class VeilPage {
     await groupComponents(graph, this.page.cdp);
 
     // Stage 5: Semantic inference
-    await inferSemantics(graph, this.config);
+    await inferSemantics(graph);
 
     this.cachedGraph = graph;
 
@@ -472,11 +469,6 @@ export class VeilPage {
 
 export class Veil {
   private browser: BrowserHandle | null = null;
-  private config?: VeilConfig;
-
-  constructor(config?: VeilConfig) {
-    this.config = config;
-  }
 
   async open(url: string): Promise<VeilPage> {
     if (!this.browser) {
@@ -485,7 +477,7 @@ export class Veil {
 
     const page = await connectToPage(this.browser.port);
     await page.navigate(url);
-    return new VeilPage(page, url, this.config);
+    return new VeilPage(page, url);
   }
 
   async auth(page: VeilPage, options?: AuthOptions): Promise<AuthResult> {

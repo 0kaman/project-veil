@@ -1,51 +1,16 @@
-import type { BehaviorGraph, BehaviorNode, SemanticLabel, VeilConfig } from "../graph/model.js";
-import { serializeCompactText } from "../graph/serializer.js";
-import { buildDisplayIdRegistry } from "../graph/display-ids.js";
+import type { BehaviorGraph, BehaviorNode, SemanticLabel } from "../graph/model.js";
 
 /**
- * Stage 5: Infer semantic labels for nodes and component groups.
- * Uses heuristic rules + optional LLM enrichment via Anthropic API.
+ * Stage 5: Infer semantic labels for nodes and component groups using heuristic rules.
  */
-export async function inferSemantics(
-  graph: BehaviorGraph,
-  config?: VeilConfig,
-): Promise<void> {
-  // 1. Apply heuristics to individual nodes
+export async function inferSemantics(graph: BehaviorGraph): Promise<void> {
   applyNodeHeuristics(graph);
-
-  // 2. Apply heuristics to component groups
   applyGroupHeuristics(graph);
-
-  // 3. Propagate group labels to unlabeled member nodes (at 0.8x confidence)
   propagateGroupLabels(graph);
-
-  // 4. Optional LLM enrichment
-  if (config?.llm?.enabled && config.llm.apiKey) {
-    await enrichWithLLM(graph, config);
-  }
 }
 
-/**
- * Re-run heuristics only (fast, <1ms). Used for incremental updates.
- * LLM labels from initial getGraph() are preserved.
- */
+/** Re-run heuristics. Used for incremental updates. */
 export function reinferSemantics(graph: BehaviorGraph): void {
-  // Preserve LLM labels
-  const llmLabels = new Map<string, SemanticLabel>();
-  for (const [id, node] of graph.nodes) {
-    if (node.semanticLabel?.source === "llm") {
-      llmLabels.set(id, node.semanticLabel);
-    }
-  }
-
-  const groupLlmLabels = new Map<string, SemanticLabel>();
-  for (const group of graph.componentGroups) {
-    if (group.semanticLabel?.source === "llm") {
-      groupLlmLabels.set(group.id, group.semanticLabel);
-    }
-  }
-
-  // Clear heuristic labels
   for (const node of graph.nodes.values()) {
     if (node.semanticLabel?.source === "heuristic") {
       node.semanticLabel = undefined;
@@ -57,20 +22,9 @@ export function reinferSemantics(graph: BehaviorGraph): void {
     }
   }
 
-  // Re-apply heuristics
   applyNodeHeuristics(graph);
   applyGroupHeuristics(graph);
   propagateGroupLabels(graph);
-
-  // Restore LLM labels (they override heuristic if present)
-  for (const [id, label] of llmLabels) {
-    const node = graph.nodes.get(id);
-    if (node) node.semanticLabel = label;
-  }
-  for (const [groupId, label] of groupLlmLabels) {
-    const group = graph.componentGroups.find((g) => g.id === groupId);
-    if (group) group.semanticLabel = label;
-  }
 }
 
 // --- Heuristic Rules ---
@@ -100,7 +54,6 @@ const RULES: HeuristicRule[] = [
     name: "navigation-landmark",
     matchNode(node) {
       if (node.role !== "navigation") return null;
-      // Primary if it has many links or is the first/main nav
       const isSecondary = /secondary|footer|breadcrumb|sidebar/i.test(node.name);
       return {
         category: "navigation",
@@ -153,7 +106,6 @@ const RULES: HeuristicRule[] = [
       );
       if (!hasPassword) return null;
 
-      // Count text input fields to distinguish login vs signup
       const inputCount = descendants.filter(
         (d) => d.role === "textbox" || d.role === "combobox",
       ).length;
@@ -171,7 +123,6 @@ const RULES: HeuristicRule[] = [
       if (hasFormSubmit) {
         return { category: "form", action: "submit", confidence: 0.80, source: "heuristic" };
       }
-      // Check name patterns
       if (/submit|sign\s*in|log\s*in|register|sign\s*up/i.test(node.name)) {
         return { category: "form", action: "submit", confidence: 0.75, source: "heuristic" };
       }
@@ -215,7 +166,7 @@ const RULES: HeuristicRule[] = [
 
 function applyNodeHeuristics(graph: BehaviorGraph): void {
   for (const [, node] of graph.nodes) {
-    if (node.semanticLabel) continue; // Already labeled (e.g. by LLM)
+    if (node.semanticLabel) continue;
 
     let bestLabel: SemanticLabel | null = null;
 
@@ -236,7 +187,6 @@ function applyGroupHeuristics(graph: BehaviorGraph): void {
   for (const group of graph.componentGroups) {
     if (group.semanticLabel) continue;
 
-    // Check component name patterns
     const name = group.componentName.toLowerCase();
 
     if (/login|signin|sign-in/i.test(name)) {
@@ -261,7 +211,7 @@ function propagateGroupLabels(graph: BehaviorGraph): void {
 
     for (const nodeId of group.memberNodeIds) {
       const node = graph.nodes.get(nodeId);
-      if (!node || node.semanticLabel) continue; // Don't override existing labels
+      if (!node || node.semanticLabel) continue;
 
       node.semanticLabel = {
         ...group.semanticLabel,
@@ -270,124 +220,6 @@ function propagateGroupLabels(graph: BehaviorGraph): void {
     }
   }
 }
-
-// --- LLM Enrichment ---
-
-interface LLMNodeLabel {
-  nodeId: string;
-  category: string;
-  action: string;
-  confidence: number;
-}
-
-interface LLMResponse {
-  labels: LLMNodeLabel[];
-}
-
-async function enrichWithLLM(
-  graph: BehaviorGraph,
-  config: VeilConfig,
-): Promise<void> {
-  const llmConfig = config.llm!;
-  const threshold = llmConfig.confidenceThreshold ?? 0.5;
-
-  // Find nodes/groups below confidence threshold
-  const lowConfidenceNodes: string[] = [];
-  for (const [id, node] of graph.nodes) {
-    if (!node.semanticLabel || node.semanticLabel.confidence < threshold) {
-      lowConfidenceNodes.push(id);
-    }
-  }
-
-  if (lowConfidenceNodes.length === 0) return;
-
-  try {
-    // Build context: compact text of the graph
-    const compactText = serializeCompactText(graph);
-    const { toDisplay } = buildDisplayIdRegistry(graph);
-
-    // Build display ID → internal ID map for response parsing
-    const displayToInternal = new Map<string, string>();
-    for (const [internalId, displayId] of toDisplay) {
-      displayToInternal.set(displayId, internalId);
-    }
-
-    const baseUrl = llmConfig.baseUrl ?? "https://api.anthropic.com";
-    const model = llmConfig.model ?? "claude-sonnet-4-20250514";
-    const maxTokens = llmConfig.maxTokens ?? 4096;
-
-    const response = await fetch(`${baseUrl}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": llmConfig.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        messages: [
-          {
-            role: "user",
-            content: `Analyze this behavior graph and label each node with a semantic purpose.
-
-${compactText}
-
-For each node that lacks a clear label or has low confidence, provide a semantic label with:
-- category: one of auth, search, navigation, content, commerce, form, dynamic, media, social
-- action: specific action like login, signup, search, primary, add-to-cart, submit, etc.
-- confidence: 0-1 how confident you are
-
-Respond with ONLY valid JSON in this format:
-{"labels":[{"nodeId":"display-id-here","category":"...","action":"...","confidence":0.9}]}
-
-Focus on nodes that seem important for automation/interaction. Skip purely structural nodes.`,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) return; // Silently fail
-
-    const data = (await response.json()) as {
-      content: Array<{ type: string; text?: string }>;
-    };
-
-    const textBlock = data.content?.find((c) => c.type === "text");
-    if (!textBlock?.text) return;
-
-    // Parse JSON from response (handle markdown code blocks)
-    const jsonText = textBlock.text
-      .replace(/^```json?\s*/m, "")
-      .replace(/\s*```$/m, "")
-      .trim();
-
-    const parsed = JSON.parse(jsonText) as LLMResponse;
-    if (!Array.isArray(parsed.labels)) return;
-
-    // Apply LLM labels
-    for (const label of parsed.labels) {
-      // Map display ID to internal ID
-      const internalId = displayToInternal.get(label.nodeId) ?? label.nodeId;
-      const node = graph.nodes.get(internalId);
-      if (!node) continue;
-
-      // LLM labels override heuristic labels below threshold
-      if (!node.semanticLabel || node.semanticLabel.confidence < threshold) {
-        node.semanticLabel = {
-          category: label.category,
-          action: label.action,
-          confidence: label.confidence,
-          source: "llm",
-        };
-      }
-    }
-  } catch {
-    // Silently fail — heuristic labels remain
-  }
-}
-
-// --- Helpers ---
 
 function collectDescendantNodes(
   graph: BehaviorGraph,

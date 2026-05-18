@@ -8,22 +8,21 @@ import {
   serializeJGF,
   buildDisplayIdRegistry,
   queryNodes,
-} from "@veil/sdk";
+} from "@veil/core";
 import type {
   InteractAction,
-  VeilConfig,
   VeilPage,
   BehaviorNode,
   BehaviorGraph,
   GraphDiff,
   DisplayIdRegistry,
-} from "@veil/sdk";
+} from "@veil/core";
 import { ensureDaemon, startDaemon, stopDaemon, daemonStatus } from "./daemon.js";
 import { createClient } from "./client.js";
 import type { VeilClient } from "./client.js";
 
 const USAGE = `Usage:
-  veil open <url> [--llm]                          Open URL, print session ID
+  veil open <url>                                   Open URL, print session ID
   veil sessions                                     List active sessions
   veil close <session-id | --all>                  Close session(s)
   veil graph <session-id> [--json]                 Print behavior graph
@@ -35,9 +34,9 @@ const USAGE = `Usage:
   veil daemon start|stop|status|restart            Manage daemon
 
 Legacy (one-shot, no session persistence):
-  veil decompose <url> [--timeout N] [--json] [--llm]
+  veil decompose <url> [--timeout N] [--json]
   veil interact <url> <nodeId> <action> [value]
-  veil shell <url> [--llm] [--json]
+  veil shell <url> [--json]
 
 Actions:
   click         Click on the node
@@ -95,7 +94,6 @@ function parseDecomposeArgs(args: string[]): {
   url: string;
   timeout: number;
   json: boolean;
-  llm: boolean;
 } {
   if (!args[0] || args[0].startsWith("--")) {
     console.error("Error: URL is required\n");
@@ -110,13 +108,10 @@ function parseDecomposeArgs(args: string[]): {
 
   let timeout = 30;
   let json = false;
-  let llm = false;
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--json") {
       json = true;
-    } else if (args[i] === "--llm") {
-      llm = true;
     } else if (args[i] === "--timeout" && args[i + 1]) {
       timeout = parseInt(args[i + 1], 10);
       if (isNaN(timeout) || timeout <= 0) {
@@ -131,7 +126,7 @@ function parseDecomposeArgs(args: string[]): {
     }
   }
 
-  return { url, timeout, json, llm };
+  return { url, timeout, json };
 }
 
 function parseInteractArgs(args: string[]): {
@@ -195,7 +190,6 @@ function parseInteractArgs(args: string[]): {
 function parseShellArgs(args: string[]): {
   url: string;
   json: boolean;
-  llm: boolean;
 } {
   if (!args[0] || args[0].startsWith("--")) {
     console.error("Error: URL is required\n");
@@ -209,13 +203,10 @@ function parseShellArgs(args: string[]): {
   }
 
   let json = false;
-  let llm = false;
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--json") {
       json = true;
-    } else if (args[i] === "--llm") {
-      llm = true;
     } else {
       console.error(`Unknown option: ${args[i]}\n`);
       console.error(USAGE);
@@ -223,7 +214,7 @@ function parseShellArgs(args: string[]): {
     }
   }
 
-  return { url, json, llm };
+  return { url, json };
 }
 
 function shortUrl(url: string): string {
@@ -524,8 +515,8 @@ function registerGraphChangeListener(state: ShellState): void {
   });
 }
 
-async function runShell(url: string, config?: VeilConfig, jsonMode = false): Promise<void> {
-  const veil = new Veil(config);
+async function runShell(url: string, jsonMode = false): Promise<void> {
+  const veil = new Veil();
 
   console.log(`${DIM}Launching browser...${RESET}`);
   const page = await veil.open(url);
@@ -665,7 +656,7 @@ function parseActionArgs(args: string[]): { action: InteractAction; nodeId: stri
 
 async function cmdOpen(args: string[]): Promise<void> {
   if (!args[0] || args[0].startsWith("--")) {
-    console.error("Error: URL is required\nUsage: veil open <url> [--llm]");
+    console.error("Error: URL is required\nUsage: veil open <url>");
     process.exit(1);
   }
   const url = normalizeUrl(args[0]);
@@ -855,7 +846,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
   switch (sub) {
     case "start":
       await startDaemon();
-      console.log(`Daemon started on :${(await daemonStatus()).port}`);
+      console.log(`Daemon started at ${(await daemonStatus()).socket}`);
       break;
     case "stop":
       await stopDaemon();
@@ -864,7 +855,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
     case "status": {
       const s = await daemonStatus();
       if (s.running) {
-        console.log(`running on :${s.port}, PID ${s.pid}`);
+        console.log(`running at ${s.socket}, PID ${s.pid}`);
       } else {
         console.log("not running");
       }
@@ -873,7 +864,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
     case "restart":
       try { await stopDaemon(); } catch {}
       await startDaemon();
-      console.log(`Daemon restarted on :${(await daemonStatus()).port}`);
+      console.log(`Daemon restarted at ${(await daemonStatus()).socket}`);
       break;
     default:
       console.error("Usage: veil daemon start|stop|status|restart");
@@ -926,35 +917,12 @@ async function main(): Promise<void> {
   }
 
   if (command === "shell") {
-    const { url, json, llm } = parseShellArgs(commandArgs);
-    let config: VeilConfig | undefined;
-    if (llm) {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        console.error("Error: --llm requires ANTHROPIC_API_KEY environment variable");
-        process.exit(1);
-      }
-      config = { llm: { enabled: true, apiKey } };
-    }
-    await runShell(url, config, json);
+    const { url, json } = parseShellArgs(commandArgs);
+    await runShell(url, json);
     return;
   }
 
-  // Build VeilConfig if --llm is used in decompose
-  let veilConfig: VeilConfig | undefined;
-  if (command === "decompose") {
-    const parsed = parseDecomposeArgs(commandArgs);
-    if (parsed.llm) {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        console.error("Error: --llm requires ANTHROPIC_API_KEY environment variable");
-        process.exit(1);
-      }
-      veilConfig = { llm: { enabled: true, apiKey } };
-    }
-  }
-
-  const veil = new Veil(veilConfig);
+  const veil = new Veil();
 
   const cleanup = async () => {
     await veil.close();

@@ -1,27 +1,37 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile, readFile, unlink, access, open } from "node:fs/promises";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { mkdir, writeFile, readFile, unlink, access, open, stat } from "node:fs/promises";
+import { connect } from "node:net";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { SOCKET_PATH, PID_FILE, LOG_FILE, VEIL_DIR } from "./daemon-protocol.js";
 
-export const VEIL_PORT = Number(process.env.VEIL_PORT) || 3100;
-export const VEIL_HOST = "127.0.0.1";
-export const BASE_URL = `http://${VEIL_HOST}:${VEIL_PORT}`;
-
-const VEIL_DIR = join(homedir(), ".veil");
-const PID_FILE = join(VEIL_DIR, "daemon.pid");
-const LOG_FILE = join(VEIL_DIR, "daemon.log");
-
-export function getBaseUrl(): string {
-  return BASE_URL;
+export function getSocketPath(): string {
+  return SOCKET_PATH;
 }
 
 export async function isRunning(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(2000) });
-    return res.status === 200;
+    await stat(SOCKET_PATH);
   } catch {
     return false;
   }
+
+  return new Promise<boolean>((resolveProbe) => {
+    const sock = connect(SOCKET_PATH);
+    const timer = setTimeout(() => {
+      sock.destroy();
+      resolveProbe(false);
+    }, 2000);
+    sock.once("connect", () => {
+      clearTimeout(timer);
+      sock.end();
+      resolveProbe(true);
+    });
+    sock.once("error", () => {
+      clearTimeout(timer);
+      resolveProbe(false);
+    });
+  });
 }
 
 export async function ensureDaemon(): Promise<void> {
@@ -32,17 +42,19 @@ export async function ensureDaemon(): Promise<void> {
 export async function startDaemon(): Promise<void> {
   await mkdir(VEIL_DIR, { recursive: true });
 
-  const serverPath = new URL("../../server/dist/index.js", import.meta.url).pathname;
+  const here = dirname(fileURLToPath(import.meta.url));
+  const daemonPath = resolve(here, "daemon-server.js");
+
   try {
-    await access(serverPath);
+    await access(daemonPath);
   } catch {
     throw new Error(
-      `Server binary not found at ${serverPath}. Run "pnpm build" in the project root first.`,
+      `Daemon binary not found at ${daemonPath}. Run "pnpm build" in the project root first.`,
     );
   }
 
   const logFd = await open(LOG_FILE, "a");
-  const child = spawn("node", [serverPath], {
+  const child = spawn("node", [daemonPath], {
     detached: true,
     stdio: ["ignore", logFd.fd, logFd.fd],
     env: process.env,
@@ -79,8 +91,8 @@ export async function stopDaemon(): Promise<void> {
   try {
     process.kill(pid, "SIGTERM");
   } catch {
-    // Process already dead
     await unlink(PID_FILE).catch(() => {});
+    await unlink(SOCKET_PATH).catch(() => {});
     return;
   }
 
@@ -95,14 +107,15 @@ export async function stopDaemon(): Promise<void> {
   }
 
   await unlink(PID_FILE).catch(() => {});
+  await unlink(SOCKET_PATH).catch(() => {});
 }
 
-export async function daemonStatus(): Promise<{ running: boolean; pid: number | null; port: number }> {
+export async function daemonStatus(): Promise<{ running: boolean; pid: number | null; socket: string }> {
   const running = await isRunning();
   let pid: number | null = null;
   try {
     const raw = await readFile(PID_FILE, "utf-8");
     pid = parseInt(raw.trim(), 10);
   } catch {}
-  return { running, pid, port: VEIL_PORT };
+  return { running, pid, socket: SOCKET_PATH };
 }

@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "veil": {
-      "command": "node",
-      "args": ["/Users/xtractor/develop/experimental/project-veil/packages/mcp/dist/index.js"]
-    }
-  }
-}

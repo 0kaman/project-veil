@@ -1,117 +1,76 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createServer, type Server } from "node:net";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-// We need to mock fs/promises for PID file reads and mock fetch for health checks.
-// Import the module under test after setting up mocks.
+let tmpDir: string;
+let socketPath: string;
+let pidPath: string;
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...orig,
-    readFile: vi.fn(),
-  };
-});
+async function setup(): Promise<void> {
+  tmpDir = await mkdtemp(join(tmpdir(), "veil-test-"));
+  socketPath = join(tmpDir, "daemon.sock");
+  pidPath = join(tmpDir, "daemon.pid");
+  process.env.VEIL_SOCKET = socketPath;
+}
 
-import { readFile } from "node:fs/promises";
-const readFileMock = vi.mocked(readFile);
+await setup();
 
-describe("daemon - isRunning", () => {
-  let fetchMock: ReturnType<typeof vi.fn>;
+const { isRunning, daemonStatus } = await import("../daemon.js");
 
-  beforeEach(() => {
-    fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+describe("daemon - isRunning (Unix socket)", () => {
+  let server: Server | null = null;
+
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((r) => server!.close(() => r()));
+      server = null;
+    }
+    await rm(socketPath, { force: true }).catch(() => {});
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  it("returns false when socket file does not exist", async () => {
+    expect(await isRunning()).toBe(false);
   });
 
-  it("returns true when health endpoint responds 200", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
-    );
-
-    const { isRunning } = await import("../daemon.js");
-    const result = await isRunning();
-    expect(result).toBe(true);
+  it("returns true when a server is listening on the socket", async () => {
+    server = createServer();
+    await new Promise<void>((r) => server!.listen(socketPath, () => r()));
+    expect(await isRunning()).toBe(true);
   });
 
-  it("returns false when fetch throws (connection refused)", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("fetch failed"));
-
-    const { isRunning } = await import("../daemon.js");
-    const result = await isRunning();
-    expect(result).toBe(false);
-  });
-
-  it("returns false when health endpoint returns non-200", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response("Service Unavailable", { status: 503 }),
-    );
-
-    const { isRunning } = await import("../daemon.js");
-    const result = await isRunning();
-    expect(result).toBe(false);
+  it("returns false when socket file exists but no listener", async () => {
+    // Create a stale socket file (simulating a crashed daemon).
+    // unix socket connect should fail with ECONNREFUSED.
+    await writeFile(socketPath, "");
+    expect(await isRunning()).toBe(false);
   });
 });
 
 describe("daemon - daemonStatus", () => {
-  let fetchMock: ReturnType<typeof vi.fn>;
+  let server: Server | null = null;
 
-  beforeEach(() => {
-    fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    vi.resetModules();
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((r) => server!.close(() => r()));
+      server = null;
+    }
+    await rm(socketPath, { force: true }).catch(() => {});
+    await rm(pidPath, { force: true }).catch(() => {});
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("returns running: true with pid and port when running with PID file", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
-    );
-    readFileMock.mockResolvedValueOnce("12345\n");
-
-    const { daemonStatus } = await import("../daemon.js");
+  it("reports running=false when no daemon", async () => {
     const status = await daemonStatus();
+    expect(status.running).toBe(false);
+    expect(status.socket).toBe(socketPath);
+  });
 
+  it("reports running=true with socket path when listening", async () => {
+    server = createServer();
+    await new Promise<void>((r) => server!.listen(socketPath, () => r()));
+    const status = await daemonStatus();
     expect(status.running).toBe(true);
-    expect(status.pid).toBe(12345);
-    expect(status.port).toBe(3100);
-  });
-
-  it("returns running: false when not running", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("ECONNREFUSED"));
-    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
-
-    const { daemonStatus } = await import("../daemon.js");
-    const status = await daemonStatus();
-
-    expect(status.running).toBe(false);
-    expect(status.pid).toBeNull();
-    expect(status.port).toBe(3100);
-  });
-
-  it("returns running: false with pid when process died but PID file exists", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("ECONNREFUSED"));
-    readFileMock.mockResolvedValueOnce("99999\n");
-
-    const { daemonStatus } = await import("../daemon.js");
-    const status = await daemonStatus();
-
-    expect(status.running).toBe(false);
-    expect(status.pid).toBe(99999);
-    expect(status.port).toBe(3100);
-  });
-});
-
-describe("daemon - getBaseUrl", () => {
-  it("returns the expected base URL", async () => {
-    const { getBaseUrl, VEIL_PORT, VEIL_HOST } = await import("../daemon.js");
-    const url = getBaseUrl();
-    expect(url).toBe(`http://${VEIL_HOST}:${VEIL_PORT}`);
-    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(status.socket).toBe(socketPath);
   });
 });
