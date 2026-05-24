@@ -221,26 +221,28 @@ describe("serializeJGF", () => {
     expect(result.graph.metadata).toEqual(graph.metadata);
   });
 
-  it("graph.nodes maps id to label+metadata", () => {
+  it("graph.nodes is keyed by stable display ID, not runtime AX id", () => {
     const nodes = new Map([["n1", makeNode({ id: "n1", role: "button", name: "OK" })]]);
     const graph = makeGraph({ nodes, roots: ["n1"] });
     const result = serializeJGF(graph) as { graph: { nodes: Record<string, { label: string; metadata: Record<string, unknown> }> } };
-    expect(result.graph.nodes["n1"]).toBeDefined();
-    expect(result.graph.nodes["n1"].label).toBe("OK");
-    expect(result.graph.nodes["n1"].metadata.role).toBe("button");
+    // Keyed by display ID "button-ok", not the AX id "n1".
+    expect(result.graph.nodes["button-ok"]).toBeDefined();
+    expect(result.graph.nodes["n1"]).toBeUndefined();
+    expect(result.graph.nodes["button-ok"].label).toBe("OK");
+    expect(result.graph.nodes["button-ok"].metadata.role).toBe("button");
   });
 
-  it("graph.edges includes contains edges for children", () => {
+  it("graph.edges includes contains edges (keyed by display ID)", () => {
     const child = makeNode({ id: "c1", role: "link", name: "A" });
     const parent = makeNode({ id: "p1", role: "navigation", name: "Nav", children: ["c1"] });
     const nodes = new Map([["p1", parent], ["c1", child]]);
     const graph = makeGraph({ nodes, roots: ["p1"] });
     const result = serializeJGF(graph) as { graph: { edges: Array<{ source: string; target: string; relation: string }> } };
-    const containsEdge = result.graph.edges.find((e) => e.relation === "contains" && e.source === "p1" && e.target === "c1");
+    const containsEdge = result.graph.edges.find((e) => e.relation === "contains" && e.source === "navigation-nav" && e.target === "link-a");
     expect(containsEdge).toBeDefined();
   });
 
-  it("graph.edges includes triggers edges for networkEdges", () => {
+  it("graph.edges includes triggers edges (keyed by display ID)", () => {
     const nodes = new Map([["n1", makeNode({ id: "n1", role: "button", name: "Go" })]]);
     const graph = makeGraph({
       nodes,
@@ -250,7 +252,7 @@ describe("serializeJGF", () => {
     const result = serializeJGF(graph) as { graph: { edges: Array<{ source: string; target: string; relation: string }> } };
     const triggerEdge = result.graph.edges.find((e) => e.relation === "triggers");
     expect(triggerEdge).toBeDefined();
-    expect(triggerEdge!.source).toBe("n1");
+    expect(triggerEdge!.source).toBe("button-go");
   });
 
   it("includes apiEndpoints when non-empty", () => {
@@ -289,10 +291,29 @@ describe("serializeJGF", () => {
     expect(result.graph.componentGroups).toBeUndefined();
   });
 
+  it("produces identical output for two graphs that differ only in runtime AX ids", () => {
+    // Same page structure, different Chrome-assigned AX node IDs (the real
+    // cross-session instability). Display-ID keying must erase that difference.
+    const buildGraph = (rootId: string, childId: string) => {
+      const child = makeNode({ id: childId, role: "link", name: "Home" });
+      const root = makeNode({ id: rootId, role: "navigation", name: "Main", children: [childId] });
+      const nodes = new Map([[rootId, root], [childId, child]]);
+      return makeGraph({ nodes, roots: [rootId] });
+    };
+
+    const a = serializeJGF(buildGraph("62", "111"));
+    const b = serializeJGF(buildGraph("8", "57"));
+
+    // Strip timestamp before comparing.
+    const norm = (g: any) => { const c = JSON.parse(JSON.stringify(g)); delete c.graph.metadata.timestamp; return c; };
+    expect(norm(a)).toEqual(norm(b));
+  });
+
   it("uses role as label when name is empty", () => {
     const nodes = new Map([["n1", makeNode({ id: "n1", role: "navigation", name: "" })]]);
     const graph = makeGraph({ nodes, roots: ["n1"] });
     const result = serializeJGF(graph) as { graph: { nodes: Record<string, { label: string }> } };
-    expect(result.graph.nodes["n1"].label).toBe("navigation");
+    // Unnamed node → display ID uses deterministic ordinal: "navigation-0".
+    expect(result.graph.nodes["navigation-0"].label).toBe("navigation");
   });
 });

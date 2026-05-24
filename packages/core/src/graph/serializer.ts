@@ -160,8 +160,15 @@ export function serializeJGF(
   const nodes: Record<string, unknown> = {};
   const edges: Array<Record<string, unknown>> = [];
 
+  // Key nodes by stable display IDs, not runtime AX node IDs. Chrome
+  // reassigns AX IDs every session, so AX-keyed JGF differs run-to-run for
+  // an identical page. Display IDs are content/structure-derived and stable,
+  // which lets an AI consumer cache, diff, and reason about graph evolution.
+  const { toDisplay } = buildDisplayIdRegistry(graph);
+  const key = (axId: string): string => toDisplay.get(axId) ?? axId;
+
   for (const [id, node] of graph.nodes) {
-    nodes[id] = {
+    nodes[key(id)] = {
       label: node.name || node.role,
       metadata: {
         role: node.role,
@@ -169,7 +176,6 @@ export function serializeJGF(
         description: node.description,
         state: node.state,
         value: node.value,
-        backendDOMNodeId: node.backendDOMNodeId,
         ...(node.events.length > 0 && { events: node.events }),
         ...(node.componentId && { componentId: node.componentId }),
         ...(node.semanticLabel && { semanticLabel: node.semanticLabel }),
@@ -178,8 +184,8 @@ export function serializeJGF(
 
     for (const childId of node.children) {
       edges.push({
-        source: id,
-        target: childId,
+        source: key(id),
+        target: key(childId),
         relation: "contains",
       });
     }
@@ -188,7 +194,7 @@ export function serializeJGF(
   // Add network trigger edges
   for (const edge of graph.networkEdges) {
     edges.push({
-      source: edge.triggerNodeId || "__page__",
+      source: edge.triggerNodeId ? key(edge.triggerNodeId) : "__page__",
       target: `${edge.request.method}:${edge.request.url}`,
       relation: "triggers",
       metadata: {
@@ -200,6 +206,12 @@ export function serializeJGF(
     });
   }
 
+  // Re-key component group member IDs to display IDs for consistency.
+  const componentGroups = graph.componentGroups?.map((g) => ({
+    ...g,
+    memberNodeIds: g.memberNodeIds.map(key),
+  }));
+
   return {
     graph: {
       type: "behavior-graph",
@@ -210,8 +222,8 @@ export function serializeJGF(
       ...(graph.apiEndpoints && graph.apiEndpoints.length > 0 && {
         apiEndpoints: graph.apiEndpoints,
       }),
-      ...(graph.componentGroups && graph.componentGroups.length > 0 && {
-        componentGroups: graph.componentGroups,
+      ...(componentGroups && componentGroups.length > 0 && {
+        componentGroups,
       }),
     },
   };
