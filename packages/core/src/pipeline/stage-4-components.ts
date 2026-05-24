@@ -136,12 +136,28 @@ async function buildReactGroups(
   }
 
   // Create ComponentGroup for each React component
+  const usedGroupIds = new Set<string>();
   for (const [name, { info, nodeIds }] of groupsByName) {
-    const groupId = `cg-react-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    // Production React bundles minify component names to "T", "N", "B", "R2"
+    // etc. — useless to an AI consumer (a 71-member group called "T"). When
+    // the name looks minified, synthesize a content-based name from the
+    // group's dominant role + size instead.
+    const componentName = isMinifiedName(name)
+      ? synthesizeComponentName(nodeIds, graph)
+      : name;
+
+    let groupId = `cg-react-${componentName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    if (usedGroupIds.has(groupId)) {
+      let i = 2;
+      while (usedGroupIds.has(`${groupId}-${i}`)) i++;
+      groupId = `${groupId}-${i}`;
+    }
+    usedGroupIds.add(groupId);
+
     const group: ComponentGroup = {
       id: groupId,
       framework: "react",
-      componentName: name,
+      componentName,
       ...(Object.keys(info.props).length > 0 && { props: info.props }),
       memberNodeIds: nodeIds,
     };
@@ -153,6 +169,44 @@ async function buildReactGroups(
       if (node) node.componentId = groupId;
     }
   }
+}
+
+/**
+ * Detect a minified React component name. Production bundlers rename
+ * components to short uppercase tokens: "T", "N", "B", "R2", "Av".
+ */
+export function isMinifiedName(name: string): boolean {
+  if (name.length <= 2) return true;
+  // Single capital + digits (e.g. "T3"), or all-caps short tokens
+  if (/^[A-Z][0-9]*$/.test(name)) return true;
+  return false;
+}
+
+/**
+ * Build a content-based name from a group's members: dominant role + size.
+ * "buttons-71", "links-16". Deterministic (role tiebreak by name).
+ */
+export function synthesizeComponentName(
+  nodeIds: string[],
+  graph: BehaviorGraph,
+): string {
+  const roleCounts = new Map<string, number>();
+  for (const id of nodeIds) {
+    const node = graph.nodes.get(id);
+    if (!node) continue;
+    roleCounts.set(node.role, (roleCounts.get(node.role) ?? 0) + 1);
+  }
+
+  let dominant = "node";
+  let max = 0;
+  for (const [role, count] of [...roleCounts].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (count > max) {
+      max = count;
+      dominant = role;
+    }
+  }
+
+  return `${dominant}s-${nodeIds.length}`;
 }
 
 /**
