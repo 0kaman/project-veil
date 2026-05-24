@@ -1,4 +1,5 @@
 import type { AXNode } from "../browser/page.js";
+import type { CDPClient } from "../browser/cdp-client.js";
 import type { BehaviorGraph, BehaviorNode, GraphDiff } from "../graph/model.js";
 
 const INTERACTIVE_ROLES = new Set([
@@ -308,4 +309,105 @@ export function patchGraphFromDiff(
   };
 
   graph.version++;
+}
+
+interface StructuralInfo {
+  tag: string;
+  href: string | null;
+  action: string | null;
+  method: string | null;
+}
+
+/**
+ * Structural behavior enrichment for server-rendered pages.
+ *
+ * Classic (non-SPA) sites encode behavior in HTML, not JS: `<a href="vote?id=1">`,
+ * `<form action="/login" method="post">`. Stage 2 captures JS event listeners
+ * and finds nothing on these — leaving every link/form behavior-less. Here we
+ * lift the structural URL into a synthetic `click`/`submit` event with an
+ * estimatedEffect, so the graph reflects what the element actually does.
+ *
+ * Only nodes that Stage 2 left event-less are touched, so SPA findings
+ * (real JS handlers) are never overwritten. Targets `link` and `form` roles.
+ */
+export async function enrichStructuralEvents(
+  graph: BehaviorGraph,
+  cdp: CDPClient,
+  nodeIds?: Iterable<string>,
+): Promise<void> {
+  const targets = nodeIds
+    ? [...nodeIds].map((id) => graph.nodes.get(id)).filter((n): n is BehaviorNode => !!n)
+    : [...graph.nodes.values()];
+
+  for (const node of targets) {
+    if (node.events.length > 0) continue; // Stage 2 already found JS handlers
+    if (node.backendDOMNodeId === 0) continue;
+    if (node.role !== "link" && node.role !== "form") continue;
+
+    let info: StructuralInfo | null;
+    try {
+      info = await getStructuralInfo(cdp, node.backendDOMNodeId);
+    } catch {
+      continue; // node may have been removed; skip
+    }
+    if (!info) continue;
+
+    if (node.role === "link" && info.href) {
+      const href = info.href.trim();
+      if (!href || href === "#" || href.startsWith("javascript:")) continue;
+      node.events.push({
+        eventType: "click",
+        category: "navigation",
+        estimatedEffect: `GET ${resolveStructuralUrl(href, graph.metadata.url)}`,
+      });
+    } else if (node.role === "form" && info.action) {
+      const method = (info.method ?? "GET").toUpperCase();
+      node.events.push({
+        eventType: "submit",
+        category: "form_submit",
+        estimatedEffect: `${method} ${resolveStructuralUrl(info.action, graph.metadata.url)}`,
+      });
+    }
+  }
+}
+
+async function getStructuralInfo(
+  cdp: CDPClient,
+  backendDOMNodeId: number,
+): Promise<StructuralInfo | null> {
+  const resolved = (await cdp.send("DOM.resolveNode", {
+    backendNodeId: backendDOMNodeId,
+  })) as { object: { objectId?: string } };
+
+  const objectId = resolved.object?.objectId;
+  if (!objectId) return null;
+
+  try {
+    const r = (await cdp.send("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: `function() {
+        const tag = this.tagName ? this.tagName.toLowerCase() : '';
+        const attr = (n) => (this.getAttribute ? this.getAttribute(n) : null);
+        return { tag, href: attr('href'), action: attr('action'), method: attr('method') };
+      }`,
+      returnByValue: true,
+    })) as { result: { value?: StructuralInfo } };
+    return r.result?.value ?? null;
+  } finally {
+    await cdp.send("Runtime.releaseObject", { objectId }).catch(() => {});
+  }
+}
+
+/** Resolve a possibly-relative URL against the page URL. Same-origin → path+search; cross-origin → absolute. */
+export function resolveStructuralUrl(raw: string, pageUrl: string): string {
+  try {
+    const resolved = new URL(raw, pageUrl);
+    const page = new URL(pageUrl);
+    if (resolved.origin === page.origin) {
+      return resolved.pathname + resolved.search;
+    }
+    return resolved.href;
+  } catch {
+    return raw;
+  }
 }

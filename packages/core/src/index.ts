@@ -31,7 +31,7 @@ import { connectToPage, type PageHandle } from "./browser/page.js";
 import { waitForNetworkIdle, waitForDomSettle, waitForSettleOrNavigation } from "./browser/page.js";
 import { performAuthFlow, type AuthOptions, type AuthResult } from "./browser/auth.js";
 import type { CDPClient } from "./browser/cdp-client.js";
-import { buildGraphFromAXTree, patchGraphFromDiff } from "./pipeline/stage-1-axtree.js";
+import { buildGraphFromAXTree, patchGraphFromDiff, enrichStructuralEvents } from "./pipeline/stage-1-axtree.js";
 import { enrichGraphWithEvents, enrichSpecificNodesWithEvents } from "./pipeline/stage-2-events.js";
 import { correlateNetwork } from "./pipeline/stage-3-network.js";
 import { buildSnapshot, diffSnapshots, type DiffableSnapshot } from "./graph/differ.js";
@@ -86,6 +86,9 @@ export class VeilPage {
     graph.version = this.graphVersion;
 
     await enrichGraphWithEvents(graph, this.page.cdp);
+    // Structural enrichment for server-rendered pages: synthesize click/submit
+    // events from href/action on link/form nodes Stage 2 left event-less.
+    await enrichStructuralEvents(graph, this.page.cdp);
     const capturedRequests = this.page.getCapturedRequests();
     correlateNetwork(graph, capturedRequests);
 
@@ -364,6 +367,8 @@ export class VeilPage {
       const changedNodeIds = new Set([...diff.added, ...diff.modified]);
       if (changedNodeIds.size > 0) {
         await enrichSpecificNodesWithEvents(this.cachedGraph, this.page.cdp, changedNodeIds);
+        // Structural enrichment for any changed link/form left event-less
+        await enrichStructuralEvents(this.cachedGraph, this.page.cdp, changedNodeIds);
       }
 
       // 6. Correlate new network requests — Stage 3 incremental
