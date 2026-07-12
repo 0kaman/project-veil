@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Adversarial "labels" &amp; edge cases</title>
+  </head>
+  <body>
+    <!-- Accessible names with characters that would corrupt a naive line-oriented
+         serializer: quotes, brackets, commas, emoji. -->
+    <main>
+      <button aria-label='Delete "Report, Q1" [draft]'>x</button>
+      <button aria-label="🛒 Add — 2 items">cart</button>
+      <a href="/x" aria-label="Multi
+line label">link</a>
+      <input type="text" aria-label='name="value", other' />
+    </main>
+  </body>
+</html>

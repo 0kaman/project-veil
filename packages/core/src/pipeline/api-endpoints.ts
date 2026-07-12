@@ -139,13 +139,13 @@ export function buildApiEndpoints(edges: NetworkEdge[]): ApiEndpoint[] {
       continue;
     }
 
+    // Group by a per-segment SIGNATURE: each id-like segment (numeric/uuid/date/
+    // hash/locale) is normalized to {id} using the SAME classifier inferUrlPattern
+    // uses. Keying on an ad-hoc prefix instead let date/locale-parameterized
+    // routes (/metrics/2024-01-01, /metrics/2024-01-02, …) explode into N groups.
     const segments = pathname.split("/").filter(Boolean);
-    // Use first segment as group key; include second only if it's not a dynamic param
-    let prefix = segments[0] ?? "";
-    if (segments.length > 1 && !/^\d+$/.test(segments[1]) && !UUID_PATTERN.test(segments[1])) {
-      prefix += "/" + segments[1];
-    }
-    const key = `${edge.request.method}:${prefix}`;
+    const signature = segments.map((s) => (isParameterSegment(s) ? "{id}" : s)).join("/");
+    const key = `${edge.request.method}:${signature}`;
 
     let group = groups.get(key);
     if (!group) {
