@@ -8,7 +8,9 @@
     "test": "turbo test",
     "test:watch": "turbo test:watch",
     "clean": "turbo clean",
-    "veil": "node packages/cli/dist/index.js"
+    "veil": "node packages/cli/dist/index.js",
+    "typecheck": "turbo typecheck",
+    "ci": "turbo typecheck build test"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -21,5 +23,9 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
   }
 }

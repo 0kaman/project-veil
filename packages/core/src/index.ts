@@ -136,6 +136,15 @@ export class VeilPage {
       navigated = true;
     };
     this.page.cdp.on("Page.frameNavigated", onNav);
+    // SPA route changes (history.pushState) fire navigatedWithinDocument, NOT
+    // frameNavigated — and loadEventFired never follows. Track them separately
+    // so the full-navigation branch (with its load-event wait) is never taken
+    // for an in-document route change.
+    let softNavigated = false;
+    const onSoftNav = () => {
+      softNavigated = true;
+    };
+    this.page.cdp.on("Page.navigatedWithinDocument", onSoftNav);
 
     try {
       // Dispatch the interaction via CDP
@@ -147,12 +156,13 @@ export class VeilPage {
       // page finishes loading — we must not wait the full idle timeout.
       await waitForSettleOrNavigation(this.page.cdp);
 
-      // Double-check: also detect navigation via URL change (catches cases
-      // where frameNavigated fired after the waits resolved)
-      if (!navigated) {
+      // Double-check: a URL change without frameNavigated is a SOFT (SPA)
+      // navigation — it must not enter the hard-navigation branch, whose
+      // loadEventFired wait would stall the full 10s grace timer.
+      if (!navigated && !softNavigated) {
         const currentUrl = await this.page.getCurrentUrl();
         if (currentUrl !== prevUrl) {
-          navigated = true;
+          softNavigated = true;
         }
       }
 
@@ -190,6 +200,20 @@ export class VeilPage {
         return newGraph;
       }
 
+      if (softNavigated) {
+        // SPA route change: the document never unloads, so there is no load
+        // event to wait for — settle the network and rebuild the graph (a new
+        // route is a new virtual page).
+        await waitForNetworkIdle(this.page.cdp);
+        this.url = await this.page.getCurrentUrl();
+        this.cachedGraph = null;
+        this.lastSnapshot = null;
+        this.graphBuildPromise = null;
+        const newGraph = await this.getGraph();
+        this.notifyRebuild(prevNodeIds, newGraph);
+        return newGraph;
+      }
+
       // Non-navigation path
       this.url = await this.page.getCurrentUrl();
 
@@ -210,6 +234,7 @@ export class VeilPage {
       return newGraph;
     } finally {
       this.page.cdp.off("Page.frameNavigated", onNav);
+      this.page.cdp.off("Page.navigatedWithinDocument", onSoftNav);
       this.mutationWatcher?.unsuppress();
     }
   }

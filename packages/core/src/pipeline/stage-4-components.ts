@@ -1,5 +1,6 @@
 import type { CDPClient } from "../browser/cdp-client.js";
 import type { BehaviorGraph, ComponentGroup } from "../graph/model.js";
+import { debugLog } from "../debug.js";
 
 interface FrameworkInfo {
   react: boolean;
@@ -84,7 +85,7 @@ async function detectFrameworks(cdp: CDPClient): Promise<FrameworkInfo> {
         // Check for React Fiber on root or first 50 elements
         const root = document.getElementById('root') || document.getElementById('app') || document.getElementById('__next');
         const elements = [root, ...Array.from(document.querySelectorAll('*')).slice(0, 50)].filter(Boolean);
-        const hasReact = elements.some(el => Object.keys(el).some(k => k.startsWith('__reactFiber$')));
+        const hasReact = elements.some(el => Object.keys(el).some(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')));
         return { react: hasReact };
       })()`,
       returnByValue: true,
@@ -228,7 +229,7 @@ async function getReactComponentForNode(
       objectId,
       functionDeclaration: `function() {
         const el = this;
-        const fiberKey = Object.keys(el).find(k => k.startsWith('__reactFiber$'));
+        const fiberKey = Object.keys(el).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
         if (!fiberKey) return null;
 
         const INTERNALS = ${JSON.stringify([...REACT_INTERNALS])};
@@ -277,7 +278,10 @@ async function getReactComponentForNode(
     await cdp.send("Runtime.releaseObject", { objectId }).catch(() => {});
 
     return result.result?.value ?? null;
-  } catch {
+  } catch (err) {
+    // A CDP hiccup here silently declasses a React page to vanilla grouping —
+    // surface it under VEIL_DEBUG rather than swallowing blind.
+    debugLog("stage-4: React component resolution failed", err);
     return null;
   }
 }

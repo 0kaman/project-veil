@@ -9,9 +9,13 @@
     "build": "tsup src/index.ts src/daemon-server.ts --format esm --sourcemap",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@veil/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

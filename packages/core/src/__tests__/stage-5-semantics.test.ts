@@ -257,7 +257,7 @@ describe("Stage 5 — inferSemantics", () => {
   });
 
   describe("API trigger heuristic", () => {
-    it("16. node with events + matching networkEdge -> form:api-trigger at 0.50", async () => {
+    it("16. node with events + matching networkEdge -> interactive:api-trigger at 0.55", async () => {
       const node = makeNode("btn6", "button", "Load Data", {
         events: [
           {
@@ -274,11 +274,11 @@ describe("Stage 5 — inferSemantics", () => {
       };
       const graph = makeGraph([node], [networkEdge]);
       await inferSemantics(graph);
-      // api-trigger has confidence 0.50 but api_call event could also match other rules
-      // The node is a button so commerce/form-submit rules run first but don't match
-      expect(node.semanticLabel?.category).toBe("form");
+      // api-trigger is its OWN category (not "form" — a Refresh/Load-more button
+      // that fires a fetch is not a form). Fixed 2026-07.
+      expect(node.semanticLabel?.category).toBe("interactive");
       expect(node.semanticLabel?.action).toBe("api-trigger");
-      expect(node.semanticLabel?.confidence).toBe(0.50);
+      expect(node.semanticLabel?.confidence).toBe(0.55);
     });
   });
 
@@ -462,21 +462,26 @@ describe("Stage 5 — label propagation", () => {
     };
   }
 
-  it("29. group label propagates to unlabeled member nodes at 0.8x confidence", async () => {
-    const node1 = makeNode("n1", "textbox", "Username");
-    const node2 = makeNode("n2", "textbox", "Password field");
-    const group = makeGroup("cg-login", "LoginForm", ["n1", "n2"]);
-    const graph = makeGraph([node1, node2], [], [group]);
+  it("29. group label propagates only onto generic members, never over self-defining inputs", async () => {
+    // Inputs are self-defining: a password field is auth:password-input, a username
+    // field is auth:identifier-input — they must NOT inherit the group's "login"
+    // (this was the 0.56 form:submit smear). A generic member DOES inherit.
+    const username = makeNode("n1", "textbox", "Username");
+    const password = makeNode("n2", "textbox", "Password field");
+    const generic = makeNode("n3", "generic", "wrapper");
+    const group = makeGroup("cg-login", "LoginForm", ["n1", "n2", "n3"]);
+    const graph = makeGraph([username, password, generic], [], [group]);
 
     await inferSemantics(graph);
 
-    // Group gets auth:login at 0.85 confidence
     expect(group.semanticLabel?.confidence).toBe(0.85);
-    // Member nodes should get 0.85 * 0.8 = 0.68
-    expect(node1.semanticLabel?.category).toBe("auth");
-    expect(node1.semanticLabel?.action).toBe("login");
-    expect(node1.semanticLabel?.confidence).toBeCloseTo(0.68);
-    expect(node2.semanticLabel?.confidence).toBeCloseTo(0.68);
+    // inputs keep their OWN meaning
+    expect(username.semanticLabel?.action).toBe("identifier-input");
+    expect(password.semanticLabel?.action).toBe("password-input");
+    // only the generic wrapper inherits the group context (0.85 * 0.7 = 0.60)
+    expect(generic.semanticLabel?.category).toBe("auth");
+    expect(generic.semanticLabel?.source).toBe("inherited");
+    expect(generic.semanticLabel?.confidence).toBeCloseTo(0.60);
   });
 
   it("30. propagated labels don't override existing node labels", async () => {
@@ -489,8 +494,8 @@ describe("Stage 5 — label propagation", () => {
 
     // searchBox gets its own heuristic label (search:input at 0.95) — should NOT be overridden
     expect(searchBox.semanticLabel?.confidence).toBe(0.95);
-    // textbox has no heuristic match so it gets the propagated group label
-    expect(textbox.semanticLabel?.category).toBe("search");
-    expect(textbox.semanticLabel?.confidence).toBeCloseTo(0.64); // 0.80 * 0.8
+    // a plain textbox is self-defining: it does NOT inherit the group's search label
+    // (prevents mislabeling distinct inputs). No rule matches "Query" -> unlabeled.
+    expect(textbox.semanticLabel).toBeUndefined();
   });
 });

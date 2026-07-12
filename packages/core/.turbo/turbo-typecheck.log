@@ -1,0 +1,4 @@
+
+> @veil/core@0.1.0 typecheck /Users/xtractor/develop/experimental/project-veil/packages/core
+> tsc --noEmit
+

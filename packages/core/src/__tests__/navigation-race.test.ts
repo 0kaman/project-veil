@@ -8,7 +8,7 @@
  * Before the fix, both interact() and MutationWatcher would race to
  * rebuild the graph, often producing stale or missing results.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { VeilPage } from "../index.js";
 import type { PageHandle, AXNode } from "../browser/page.js";
 import type { CDPClient } from "../browser/cdp-client.js";
@@ -348,7 +348,7 @@ describe("VeilPage navigation race conditions", () => {
 
       // Count AXTree fetches after initial build
       let buildCount = 0;
-      const origGetAXTree = page.getAXTree as ReturnType<typeof vi.fn>;
+      const origGetAXTree = page.getAXTree as unknown as Mock;
       const origImpl = origGetAXTree.getMockImplementation()!;
       origGetAXTree.mockImplementation(async () => {
         buildCount++;
@@ -484,8 +484,8 @@ describe("VeilPage navigation race conditions", () => {
 
       // Make AXTree fail on next call
       let failNext = false;
-      const origImpl = (page.getAXTree as ReturnType<typeof vi.fn>).getMockImplementation()!;
-      (page.getAXTree as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      const origImpl = (page.getAXTree as unknown as Mock).getMockImplementation()!;
+      (page.getAXTree as unknown as Mock).mockImplementation(async () => {
         if (failNext) throw new Error("Simulated CDP error");
         return origImpl();
       });

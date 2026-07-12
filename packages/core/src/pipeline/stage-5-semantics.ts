@@ -114,6 +114,23 @@ const RULES: HeuristicRule[] = [
     },
   },
 
+  // Rule 5b: Auth input fields — a password field is a password field, not a
+  // "form:submit". Prevents the group label from smearing over distinct inputs.
+  {
+    name: "auth-input",
+    matchNode(node) {
+      if (node.role !== "textbox" && node.role !== "combobox") return null;
+      const name = node.name.toLowerCase();
+      if (node.state["password"] || /password|passcode/i.test(name)) {
+        return { category: "auth", action: "password-input", confidence: 0.90, source: "heuristic" };
+      }
+      if (/e-?mail|username|user\s*name|phone|account/i.test(name)) {
+        return { category: "auth", action: "identifier-input", confidence: 0.70, source: "heuristic" };
+      }
+      return null;
+    },
+  },
+
   // Rule 6: Form submit
   {
     name: "form-submit",
@@ -157,7 +174,7 @@ const RULES: HeuristicRule[] = [
         (e) => e.triggerNodeId === node.id,
       );
       if (hasNetworkEdge) {
-        return { category: "form", action: "api-trigger", confidence: 0.50, source: "heuristic" };
+        return { category: "interactive", action: "api-trigger", confidence: 0.55, source: "heuristic" };
       }
       return null;
     },
@@ -205,6 +222,21 @@ function applyGroupHeuristics(graph: BehaviorGraph): void {
   }
 }
 
+// Roles whose purpose is defined by their OWN rules — a group label must never
+// smear over them (a "Forgot password?" link is a navigation, not a form-submit).
+const SELF_DEFINING_ROLES = new Set([
+  "link",
+  "textbox",
+  "searchbox",
+  "combobox",
+  "checkbox",
+  "radio",
+  "switch",
+  "slider",
+  "tab",
+  "menuitem",
+]);
+
 function propagateGroupLabels(graph: BehaviorGraph): void {
   for (const group of graph.componentGroups) {
     if (!group.semanticLabel) continue;
@@ -212,10 +244,14 @@ function propagateGroupLabels(graph: BehaviorGraph): void {
     for (const nodeId of group.memberNodeIds) {
       const node = graph.nodes.get(nodeId);
       if (!node || node.semanticLabel) continue;
+      // Only inherit group context onto generic/button members — never onto
+      // roles that carry their own meaning.
+      if (SELF_DEFINING_ROLES.has(node.role)) continue;
 
       node.semanticLabel = {
         ...group.semanticLabel,
-        confidence: group.semanticLabel.confidence * 0.8,
+        confidence: Math.round(group.semanticLabel.confidence * 0.7 * 100) / 100,
+        source: "inherited",
       };
     }
   }

@@ -57,7 +57,7 @@ export interface SemanticLabel {
   category: string;    // 'auth', 'search', 'navigation', 'content', 'commerce', 'form', 'dynamic'
   action: string;      // 'login', 'signup', 'search', 'primary', 'add-to-cart', 'submit'
   confidence: number;  // 0-1
-  source: 'heuristic' | 'llm';
+  source: 'heuristic' | 'inherited' | 'llm';  // 'inherited' = from component group; 'llm' = enricher
 }
 
 export interface ComponentGroup {

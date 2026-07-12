@@ -1,0 +1,15 @@
+
+> @veil/core@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/core
+> tsup src/index.ts --format esm --dts --sourcemap
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Target: es2024
+ESM Build start
+ESM dist/index.js     100.21 KB
+ESM dist/index.js.map 215.28 KB
+ESM ⚡️ Build success in 51ms
+DTS Build start
+DTS ⚡️ Build success in 581ms
+DTS dist/index.d.ts 7.38 KB

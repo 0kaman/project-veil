@@ -1,5 +1,6 @@
 import type { CDPClient } from "../browser/cdp-client.js";
-import type { BehaviorGraph, EventBinding } from "../graph/model.js";
+import type { BehaviorGraph, BehaviorNode, EventBinding } from "../graph/model.js";
+import { debugLog } from "../debug.js";
 import {
   queryInjectedRegistry,
   type InjectedRegistryData,
@@ -72,6 +73,38 @@ export async function collectScriptUrls(cdp: CDPClient): Promise<Map<string, str
   return scriptUrls;
 }
 
+
+// Event enrichment is CDP-round-trip heavy (resolveNode + getEventListeners +
+// source fetch per node). Serial enrichment of a 300-node page was 1000+
+// sequential round-trips per build — batch like Stage 4 does.
+const EVENT_BATCH_SIZE = 20;
+
+async function enrichNodesBatched(
+  nodes: BehaviorNode[],
+  cdp: CDPClient,
+  scriptUrls: Map<string, string>,
+  injectedData: InjectedRegistryData,
+): Promise<void> {
+  for (let i = 0; i < nodes.length; i += EVENT_BATCH_SIZE) {
+    const batch = nodes.slice(i, i + EVENT_BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (node) => {
+        try {
+          const events = await getNodeEvents(cdp, node.backendDOMNodeId, scriptUrls);
+          if (events.length > 0) {
+            node.events = deduplicateEvents(
+              enrichFromInjectedData(events, injectedData),
+            );
+          }
+        } catch (err) {
+          // Node may have been removed from DOM between AXTree snapshot and now
+          debugLog("stage-2: event enrichment failed for node", node.id, err);
+        }
+      }),
+    );
+  }
+}
+
 export async function enrichGraphWithEvents(
   graph: BehaviorGraph,
   cdp: CDPClient,
@@ -81,21 +114,10 @@ export async function enrichGraphWithEvents(
   // Query injected registry once (covers all elements)
   const injectedData = await queryInjectedRegistry(cdp);
 
-  for (const [, node] of graph.nodes) {
-    if (!INTERACTIVE_ROLES.has(node.role)) continue;
-    if (node.backendDOMNodeId === 0) continue;
-
-    try {
-      const events = await getNodeEvents(cdp, node.backendDOMNodeId, scriptUrls);
-      if (events.length > 0) {
-        node.events = deduplicateEvents(
-          enrichFromInjectedData(events, injectedData),
-        );
-      }
-    } catch {
-      // Node may have been removed from DOM between AXTree snapshot and now — skip
-    }
-  }
+  const targets = Array.from(graph.nodes.values()).filter(
+    (n) => INTERACTIVE_ROLES.has(n.role) && n.backendDOMNodeId !== 0,
+  );
+  await enrichNodesBatched(targets, cdp, scriptUrls, injectedData);
 
   await clearReactHandlerRegistry(cdp);
 }
@@ -110,23 +132,15 @@ export async function enrichSpecificNodesWithEvents(
   const scriptUrls = await collectScriptUrls(cdp);
   const injectedData = await queryInjectedRegistry(cdp);
 
+  const targets: BehaviorNode[] = [];
   for (const nodeId of nodeIds) {
     const node = graph.nodes.get(nodeId);
     if (!node) continue;
     if (!INTERACTIVE_ROLES.has(node.role)) continue;
     if (node.backendDOMNodeId === 0) continue;
-
-    try {
-      const events = await getNodeEvents(cdp, node.backendDOMNodeId, scriptUrls);
-      if (events.length > 0) {
-        node.events = deduplicateEvents(
-          enrichFromInjectedData(events, injectedData),
-        );
-      }
-    } catch {
-      // Node may have been removed from DOM between AXTree snapshot and now — skip
-    }
+    targets.push(node);
   }
+  await enrichNodesBatched(targets, cdp, scriptUrls, injectedData);
 
   await clearReactHandlerRegistry(cdp);
 }
@@ -176,6 +190,7 @@ async function getDirectListeners(
   for (const listener of result.listeners ?? []) {
     let category: EventBinding["category"] = "unknown";
     let source: EventBinding["source"] | undefined;
+    let fnName = "";
 
     // Try to get handler source for categorization
     if (listener.handler?.objectId) {
@@ -188,8 +203,10 @@ async function getDirectListeners(
 
         const handlerSource = fnResult.result?.value ?? "";
         category = categorizeHandler(handlerSource);
-      } catch {
+        fnName = extractFunctionName(handlerSource);
+      } catch (err) {
         // Handler may not be stringifiable
+        debugLog("stage-2: handler stringify failed", err);
       }
 
       // Release handler object
@@ -204,7 +221,7 @@ async function getDirectListeners(
         scriptUrl: scriptUrls.get(listener.scriptId) ?? `script:${listener.scriptId}`,
         lineNumber: listener.lineNumber ?? 0,
         columnNumber: listener.columnNumber ?? 0,
-        functionName: "",
+        functionName: fnName,
       };
     }
 
@@ -231,7 +248,7 @@ async function getReactHandlers(
       const el = this;
       const handlers = [];
 
-      const fiberKey = Object.keys(el).find(k => k.startsWith('__reactFiber$'));
+      const fiberKey = Object.keys(el).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
       if (!fiberKey) return handlers;
 
       window.__veil_react_handlers__ = window.__veil_react_handlers__ || {};
@@ -343,7 +360,16 @@ async function clearReactHandlerRegistry(cdp: CDPClient): Promise<void> {
     .catch(() => {});
 }
 
-export function categorizeHandler(
+export /** Pull a handler's function name from its source: "function onClick(" ->
+ * "onClick"; arrow/anonymous handlers yield "". Best-effort, never throws. */
+function extractFunctionName(source: string): string {
+  const m =
+    source.match(/^\s*(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/) ||
+    source.match(/^\s*([A-Za-z_$][\w$]*)\s*(?:=|:)\s*(?:async\s*)?\(/);
+  return m ? m[1] : "";
+}
+
+function categorizeHandler(
   source: string,
 ): EventBinding["category"] {
   if (!source) return "unknown";
