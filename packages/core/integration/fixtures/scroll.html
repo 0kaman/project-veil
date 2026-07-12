@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scroll — Fixture</title>
+    <style>
+      .spacer { height: 2000px; }
+    </style>
+  </head>
+  <body>
+    <!-- A button far below the fold: exercises scroll-into-view before click
+         (without it, the click lands on empty viewport space). -->
+    <div class="spacer">Scroll down…</div>
+    <button id="deep" onclick="this.textContent = 'Clicked'">Deep button</button>
+  </body>
+</html>

@@ -10,7 +10,8 @@
     "clean": "turbo clean",
     "veil": "node packages/cli/dist/index.js",
     "typecheck": "turbo typecheck",
-    "ci": "turbo typecheck build test"
+    "ci": "turbo typecheck build test",
+    "test:integration": "pnpm --filter @veil/core test:integration"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
