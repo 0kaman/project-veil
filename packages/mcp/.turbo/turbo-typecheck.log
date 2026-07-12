@@ -1,0 +1,4 @@
+
+> @veil/mcp@0.1.0 typecheck /Users/xtractor/develop/experimental/project-veil/packages/mcp
+> tsc --noEmit
+
