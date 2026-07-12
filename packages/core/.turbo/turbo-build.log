@@ -7,9 +7,9 @@ CLI Using tsconfig: tsconfig.json
 CLI tsup v8.5.1
 CLI Target: es2024
 ESM Build start
-ESM dist/index.js     100.21 KB
-ESM dist/index.js.map 215.28 KB
-ESM ⚡️ Build success in 51ms
+ESM dist/index.js     106.82 KB
+ESM dist/index.js.map 231.75 KB
+ESM ⚡️ Build success in 19ms
 DTS Build start
-DTS ⚡️ Build success in 581ms
-DTS dist/index.d.ts 7.38 KB
+DTS ⚡️ Build success in 504ms
+DTS dist/index.d.ts 7.73 KB

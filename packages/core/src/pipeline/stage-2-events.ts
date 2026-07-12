@@ -374,22 +374,24 @@ function categorizeHandler(
 ): EventBinding["category"] {
   if (!source) return "unknown";
 
-  // API call patterns
+  // API call patterns. `.send(` alone is too broad (XState actor.send,
+  // res.send, analytics.send) — require it paired with an XHR object.
   if (
     /\bfetch\s*\(/.test(source) ||
     /XMLHttpRequest/.test(source) ||
     /\baxios[.(]/.test(source) ||
     /\$\.\s*ajax\b/.test(source) ||
-    /\.send\s*\(/.test(source)
+    /\bxhr\b[\s\S]{0,40}\.send\s*\(/.test(source)
   ) {
     return "api_call";
   }
 
-  // Navigation patterns
+  // Navigation patterns. Bare `location`/`router` match any local var — require
+  // the browser-object forms.
   if (
-    /location\s*[.=]/.test(source) ||
-    /history\.\s*(push|replace)/.test(source) ||
-    /\brouter\b/.test(source) ||
+    /\b(?:window\.|document\.)?location\s*[.=]/.test(source) ||
+    /history\.\s*(push|replace)State/.test(source) ||
+    /\brouter\.(push|replace|navigate|go)\b/.test(source) ||
     /\bnavigate\s*\(/.test(source) ||
     /window\.open\s*\(/.test(source) ||
     /\.href\s*=/.test(source)
@@ -397,11 +399,12 @@ function categorizeHandler(
     return "navigation";
   }
 
-  // Form submit patterns
+  // Form submit patterns. `form.*submit` matched react-hook-form on non-form
+  // controls — require an actual .submit() call or a submit-handler name.
   if (
-    /\.submit\s*\(/.test(source) ||
-    /form.*submit/i.test(source) ||
-    /handleSubmit/.test(source)
+    /\.submit\s*\(\s*\)/.test(source) ||
+    /\bhandleSubmit\b/.test(source) ||
+    /\bonSubmit\b/.test(source)
   ) {
     return "form_submit";
   }

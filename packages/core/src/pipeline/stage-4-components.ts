@@ -301,6 +301,21 @@ function buildVanillaGroups(graph: BehaviorGraph): void {
 }
 
 function containerBasedGrouping(graph: BehaviorGraph): void {
+  // Two disjoint <nav aria-label="Main"> (or two <form> named "Login") would
+  // otherwise produce the same cg-vanilla-navigation-main id — a duplicate key.
+  // Reuse the React-side suffixing so vanilla group ids are unique too.
+  const usedGroupIds = new Set<string>(graph.componentGroups.map((g) => g.id));
+  const uniqueGroupId = (base: string): string => {
+    if (!usedGroupIds.has(base)) {
+      usedGroupIds.add(base);
+      return base;
+    }
+    let i = 2;
+    while (usedGroupIds.has(`${base}-${i}`)) i++;
+    const id = `${base}-${i}`;
+    usedGroupIds.add(id);
+    return id;
+  };
   // Build a stable ordering of container candidates:
   //   - by tree depth DESC (innermost first — inner forms claim their descendants
   //     before an outer <main> sweeps them up)
@@ -331,7 +346,7 @@ function containerBasedGrouping(graph: BehaviorGraph): void {
       ? node.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20)
       : String(graph.componentGroups.length + 1);
 
-    const groupId = `cg-vanilla-${node.role}-${namePart}`;
+    const groupId = uniqueGroupId(`cg-vanilla-${node.role}-${namePart}`);
     const allMembers = [node.id, ...memberIds];
 
     const group: ComponentGroup = {

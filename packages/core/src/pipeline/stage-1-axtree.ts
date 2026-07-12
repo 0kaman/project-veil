@@ -46,6 +46,22 @@ const CONTAINER_ROLES = new Set([
   "radiogroup",
   "article",
   "search",
+  // Tabular / list body roles — without these, table and list CONTENT collapsed
+  // to nothing (the container was kept but its rows/cells/items were dropped),
+  // and stage-5's content-list rule counted listitem children that didn't survive.
+  "row",
+  "rowgroup",
+  "gridcell",
+  "cell",
+  "columnheader",
+  "rowheader",
+  "listitem",
+  // Live/measurement widgets that carry behavioral meaning.
+  "alert",
+  "status",
+  "log",
+  "progressbar",
+  "meter",
 ]);
 
 const HEADING_PATTERN = /^heading$/;
@@ -308,7 +324,9 @@ export function patchGraphFromDiff(
     route: parsedUrl.pathname + parsedUrl.search,
   };
 
-  graph.version++;
+  // NOTE: the version counter is owned by the Veil instance (a single monotonic
+  // source of truth). The caller bumps it after patching — bumping graph.version
+  // here would diverge from the full-build path and let version go backwards.
 }
 
 interface StructuralInfo {
@@ -354,7 +372,10 @@ export async function enrichStructuralEvents(
 
     if (node.role === "link" && info.href) {
       const href = info.href.trim();
-      if (!href || href === "#" || href.startsWith("javascript:")) continue;
+      // Skip in-page anchors and JS links. A fragment link ("#section", a "back
+      // to top" or accordion toggle) is NOT a navigation — resolveStructuralUrl
+      // drops the hash and would emit a phantom "GET /current-path" edge.
+      if (!href || href.startsWith("#") || href.startsWith("javascript:")) continue;
       node.events.push({
         eventType: "click",
         category: "navigation",

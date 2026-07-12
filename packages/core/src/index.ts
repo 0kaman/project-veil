@@ -89,6 +89,8 @@ export class VeilPage {
     // Structural enrichment for server-rendered pages: synthesize click/submit
     // events from href/action on link/form nodes Stage 2 left event-less.
     await enrichStructuralEvents(graph, this.page.cdp);
+    // Let in-flight response-body fetches land before we read shapes.
+    await this.page.settleNetwork();
     const capturedRequests = this.page.getCapturedRequests();
     correlateNetwork(graph, capturedRequests);
 
@@ -385,8 +387,12 @@ export class VeilPage {
         return false;
       }
 
-      // 4. Patch graph — Stage 1 incremental
+      // 4. Patch graph — Stage 1 incremental. Bump the single monotonic version
+      // counter (never the graph field directly — that let version regress when
+      // a later full rebuild reset it below the incrementally-advanced value).
       patchGraphFromDiff(this.cachedGraph, axNodes, diff, this.url, title);
+      this.graphVersion++;
+      this.cachedGraph.version = this.graphVersion;
 
       // 5. Selective event enrichment — Stage 2 on added ∪ modified
       const changedNodeIds = new Set([...diff.added, ...diff.modified]);
@@ -397,6 +403,7 @@ export class VeilPage {
       }
 
       // 6. Correlate new network requests — Stage 3 incremental
+      await this.page.settleNetwork();
       const newRequests = this.page.getNewCapturedRequests();
       if (newRequests.length > 0) {
         correlateNetwork(this.cachedGraph, newRequests);
@@ -479,13 +486,32 @@ export class VeilPage {
 
 export class Veil {
   private browser: BrowserHandle | null = null;
+  private launchPromise: Promise<BrowserHandle> | null = null;
+
+  /** Launch (or reuse) the single shared browser. Guarded by an in-flight
+   * promise so two concurrent open() calls — common under the daemon, whose
+   * dispatch is fully async — can never spawn two Chrome processes and orphan
+   * one. */
+  private async ensureBrowser(): Promise<BrowserHandle> {
+    if (this.browser) return this.browser;
+    if (!this.launchPromise) {
+      this.launchPromise = launchBrowser()
+        .then((b) => {
+          this.browser = b;
+          return b;
+        })
+        .finally(() => {
+          this.launchPromise = null;
+        });
+    }
+    return this.launchPromise;
+  }
 
   async open(url: string): Promise<VeilPage> {
-    if (!this.browser) {
-      this.browser = await launchBrowser();
-    }
-
-    const page = await connectToPage(this.browser.port);
+    const browser = await this.ensureBrowser();
+    // freshTarget: each open() gets its own tab so concurrent sessions can't
+    // hijack each other's page.
+    const page = await connectToPage(browser.port, undefined, true);
     await page.navigate(url);
     return new VeilPage(page, url);
   }

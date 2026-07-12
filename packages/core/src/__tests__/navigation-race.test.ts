@@ -201,6 +201,7 @@ function createMockPage(cdp: CDPClient) {
     }),
     getCapturedRequests: vi.fn(() => []),
     getNewCapturedRequests: vi.fn(() => []),
+    settleNetwork: vi.fn(async () => {}),
     startNetworkCapture: vi.fn(async () => {}),
     getCurrentUrl: vi.fn(async () => {
       const result = await cdp.send("Runtime.evaluate", { expression: "window.location.href", returnByValue: true });

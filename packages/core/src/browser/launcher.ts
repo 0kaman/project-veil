@@ -55,26 +55,53 @@ export async function launchBrowser(options?: LaunchOptions): Promise<BrowserHan
     stdio: ["ignore", "ignore", "pipe"],
   });
 
-  const wsUrl = await new Promise<string>((resolve, reject) => {
-    let stderr = "";
-    const onData = (chunk: Buffer) => {
-      stderr += chunk.toString();
-      const match = stderr.match(/DevTools listening on (ws:\/\/.+)/);
-      if (match) {
-        child.stderr!.off("data", onData);
-        resolve(match[1]);
-      }
-    };
-    child.stderr!.on("data", onData);
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (!stderr.includes("DevTools listening on")) {
-        reject(new Error(`Chrome exited with code ${code}\n${stderr}`));
-      }
-    });
+  // If we never reach a live DevTools socket, the spawned Chrome and the temp
+  // dir must not leak. Reap both on every failure path (timeout, spawn error,
+  // early exit) before rejecting.
+  const reapOnFailure = async () => {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+    if (ownedDataDir) {
+      await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
+    }
+  };
 
-    setTimeout(() => reject(new Error("Chrome launch timed out")), 10_000);
-  });
+  let wsUrl: string;
+  try {
+    wsUrl = await new Promise<string>((resolve, reject) => {
+      let stderr = "";
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.stderr!.off("data", onData);
+        fn();
+      };
+      const onData = (chunk: Buffer) => {
+        stderr += chunk.toString();
+        const match = stderr.match(/DevTools listening on (ws:\/\/.+)/);
+        if (match) finish(() => resolve(match[1].trim()));
+      };
+      child.stderr!.on("data", onData);
+      child.on("error", (err) => finish(() => reject(err)));
+      child.on("exit", (code) => {
+        if (!stderr.includes("DevTools listening on")) {
+          finish(() => reject(new Error(`Chrome exited with code ${code}\n${stderr}`)));
+        }
+      });
+      const timer = setTimeout(
+        () => finish(() => reject(new Error("Chrome launch timed out"))),
+        10_000,
+      );
+    });
+  } catch (err) {
+    await reapOnFailure();
+    throw err;
+  }
 
   const portMatch = wsUrl.match(/:(\d+)\//);
   const port = portMatch ? parseInt(portMatch[1], 10) : 0;

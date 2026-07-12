@@ -1,11 +1,26 @@
 import type { BehaviorGraph, SemanticLabel } from "./model.js";
 import { buildDisplayIdRegistry } from "./display-ids.js";
 
+/** Collapse control characters (newlines, tabs) and escape embedded quotes so a
+ * value can sit inside `"..."` on one line without breaking the line-oriented
+ * format an LLM parses. Accessible names and aria-labels routinely contain
+ * newlines and commas. */
+function quote(raw: string): string {
+  const clean = raw.replace(/[\r\n\t]+/g, " ").replace(/"/g, '\\"').trim();
+  return `"${clean}"`;
+}
+
+/** State values may contain commas, which would break the ", " join. Sanitize
+ * key and value the same way. */
+function cleanInline(raw: string): string {
+  return raw.replace(/[\r\n\t]+/g, " ").replace(/,/g, " ").trim();
+}
+
 export function serializeCompactText(graph: BehaviorGraph): string {
   const lines: string[] = [];
   const { toDisplay: displayIds } = buildDisplayIdRegistry(graph);
 
-  lines.push(`PAGE ${graph.metadata.url} "${graph.metadata.title}"`);
+  lines.push(`PAGE ${graph.metadata.url} ${quote(graph.metadata.title)}`);
   lines.push(`STATE route:${graph.metadata.route}`);
   lines.push("");
   lines.push("NODES");
@@ -18,19 +33,19 @@ export function serializeCompactText(graph: BehaviorGraph): string {
     const displayId = displayIds.get(nodeId) ?? nodeId;
 
     let line = `${indent}${displayId} [${node.role}]`;
-    if (node.name) line += ` "${node.name}"`;
+    if (node.name) line += ` ${quote(node.name)}`;
     lines.push(line);
 
     const stateEntries = Object.entries(node.state);
     if (stateEntries.length > 0) {
       const stateStr = stateEntries
-        .map(([k, v]) => (v === true ? k : `${k}:${v}`))
+        .map(([k, v]) => (v === true ? cleanInline(k) : `${cleanInline(k)}:${cleanInline(String(v))}`))
         .join(", ");
       lines.push(`${indent}  state: ${stateStr}`);
     }
 
     if (node.value) {
-      lines.push(`${indent}  value: "${node.value}"`);
+      lines.push(`${indent}  value: ${quote(node.value)}`);
     }
 
     for (const event of node.events) {

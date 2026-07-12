@@ -7,10 +7,10 @@ CLI Using tsconfig: tsconfig.json
 CLI tsup v8.5.1
 CLI Target: es2024
 ESM Build start
+ESM dist/index.js              33.66 KB
+ESM dist/index.js.map          63.71 KB
 ESM dist/chunk-4Y53W3J5.js     397.00 B
-ESM dist/index.js              33.51 KB
-ESM dist/daemon-server.js      6.17 KB
+ESM dist/daemon-server.js      7.57 KB
 ESM dist/chunk-4Y53W3J5.js.map 1.33 KB
-ESM dist/index.js.map          63.46 KB
-ESM dist/daemon-server.js.map  11.99 KB
+ESM dist/daemon-server.js.map  15.68 KB
 ESM ⚡️ Build success in 14ms

@@ -70,6 +70,7 @@ export class NetworkCapture {
   private lastDrainIndex = 0;
   private onRequest: ((params: unknown) => void) | null = null;
   private onResponse: ((params: unknown) => void) | null = null;
+  private bodyFetches = new Set<Promise<void>>();
 
   constructor(cdp: CDPClient) {
     this.cdp = cdp;
@@ -135,9 +136,12 @@ export class NetworkCapture {
       };
       this.completed.push(completed);
 
-      // Fire-and-forget: capture response body for JSON responses
+      // Capture response body for JSON responses. Tracked (not fire-and-forget)
+      // so the pipeline can await outstanding fetches before it reads shapes —
+      // otherwise inference ran before the body arrived and most endpoints got
+      // no responseShape.
       if (p.response.mimeType.includes("json")) {
-        this.cdp
+        const fetch = this.cdp
           .send("Network.getResponseBody", { requestId: p.requestId })
           .then((result) => {
             const body = (result as { body: string }).body;
@@ -146,6 +150,8 @@ export class NetworkCapture {
             }
           })
           .catch(() => {});
+        this.bodyFetches.add(fetch);
+        void fetch.finally(() => this.bodyFetches.delete(fetch));
       }
 
       // Evict oldest entries when over cap
@@ -158,6 +164,16 @@ export class NetworkCapture {
 
     this.cdp.on("Network.requestWillBeSent", this.onRequest);
     this.cdp.on("Network.responseReceived", this.onResponse);
+  }
+
+  /** Await outstanding response-body fetches (bounded) so shape inference sees
+   * bodies that were still in flight. Call before draining. */
+  async settle(timeoutMs = 500): Promise<void> {
+    if (this.bodyFetches.size === 0) return;
+    await Promise.race([
+      Promise.allSettled([...this.bodyFetches]),
+      new Promise((r) => setTimeout(r, timeoutMs)),
+    ]);
   }
 
   drain(): NetworkRequest[] {

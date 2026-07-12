@@ -311,7 +311,11 @@ describe("patchGraphFromDiff", () => {
     expect(graph.metadata.route).toBe("/new-page");
   });
 
-  it("increments version", () => {
+  it("leaves the version counter to the caller (single monotonic source)", () => {
+    // patchGraphFromDiff must NOT bump graph.version itself — the Veil instance
+    // owns a single monotonic counter and bumps it after patching. Bumping here
+    // too let version regress when a later full rebuild reset it. See MIND-style
+    // note in stage-1-axtree.ts.
     const graph = buildTestGraph();
     expect(graph.version).toBe(1);
     const newAXNodes: AXNode[] = [
@@ -321,7 +325,7 @@ describe("patchGraphFromDiff", () => {
     ];
     const diff: GraphDiff = { added: [], removed: [], modified: [] };
     patchGraphFromDiff(graph, newAXNodes, diff, "https://example.com", "Test");
-    expect(graph.version).toBe(2);
+    expect(graph.version).toBe(1); // unchanged by the patch itself
   });
 
   it("cleans removed nodes from parent children arrays", () => {

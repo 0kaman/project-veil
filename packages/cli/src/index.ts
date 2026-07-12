@@ -810,7 +810,11 @@ async function cmdAuth(args: string[]): Promise<void> {
     if (args[i] === "--url" && args[i + 1]) {
       loginUrl = normalizeUrl(args[++i]);
     } else if (args[i] === "--timeout" && args[i + 1]) {
-      timeoutMs = parseInt(args[++i], 10) * 1000;
+      const secs = parseInt(args[++i], 10);
+      if (Number.isNaN(secs) || secs <= 0) {
+        throw new Error("--timeout must be a positive number of seconds");
+      }
+      timeoutMs = secs * 1000;
     }
   }
 

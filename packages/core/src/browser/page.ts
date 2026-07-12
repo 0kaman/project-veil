@@ -23,6 +23,7 @@ export interface PageHandle {
   getTitle(): Promise<string>;
   getCapturedRequests(): NetworkRequest[];
   getNewCapturedRequests(): NetworkRequest[];
+  settleNetwork(timeoutMs?: number): Promise<void>;
   startNetworkCapture(): Promise<void>;
   getCurrentUrl(): Promise<string>;
   close(): void;
@@ -31,23 +32,25 @@ export interface PageHandle {
 export async function connectToPage(
   port: number,
   targetUrl?: string,
+  freshTarget = false,
 ): Promise<PageHandle> {
-  const listResp = await fetch(`http://127.0.0.1:${port}/json`);
-  const targets = (await listResp.json()) as Array<{
-    type: string;
-    webSocketDebuggerUrl: string;
-    url: string;
-  }>;
+  type Target = { id?: string; type: string; webSocketDebuggerUrl: string; url: string };
+  let target: Target | undefined;
 
-  let target = targets.find((t) => t.type === "page");
-  if (!target) {
-    // No page target yet — create one via /json/new
-    const newResp = await fetch(`http://127.0.0.1:${port}/json/new`);
-    target = (await newResp.json()) as {
-      type: string;
-      webSocketDebuggerUrl: string;
-      url: string;
-    };
+  if (freshTarget) {
+    // Always create a DEDICATED tab so concurrent sessions are isolated —
+    // otherwise every session attaches to the first shared page target and one
+    // session's navigate() hijacks another's page.
+    const newResp = await fetch(`http://127.0.0.1:${port}/json/new`, { method: "PUT" });
+    target = (await newResp.json()) as Target;
+  } else {
+    const listResp = await fetch(`http://127.0.0.1:${port}/json`);
+    const targets = (await listResp.json()) as Target[];
+    target = targets.find((t) => t.type === "page");
+    if (!target) {
+      const newResp = await fetch(`http://127.0.0.1:${port}/json/new`, { method: "PUT" });
+      target = (await newResp.json()) as Target;
+    }
   }
   if (!target?.webSocketDebuggerUrl) {
     throw new Error("No page target found and could not create one");
@@ -77,22 +80,32 @@ export async function connectToPage(
   await networkCapture.start();
 
   const navigate = async (url: string, timeoutMs = 30_000): Promise<void> => {
-    const loadPromise = new Promise<void>((resolve) => {
-      const handler = () => {
-        cdp.off("Page.loadEventFired", handler);
-        resolve();
-      };
-      cdp.on("Page.loadEventFired", handler);
-    });
+    let handler: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const loadPromise = new Promise<void>((resolve) => {
+        handler = () => resolve();
+        cdp.on("Page.loadEventFired", handler);
+      });
 
-    await cdp.send("Page.navigate", { url });
+      await cdp.send("Page.navigate", { url });
 
-    await Promise.race([
-      loadPromise,
-      new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error("Navigation timed out")), timeoutMs),
-      ),
-    ]);
+      await Promise.race([
+        loadPromise,
+        new Promise<void>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Navigation timed out")),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      // The load handler leaked on every timeout — a long-lived daemon session
+      // doing many navigations accumulated stale loadEventFired handlers that
+      // fired on unrelated future loads. Always detach.
+      if (handler) cdp.off("Page.loadEventFired", handler);
+      if (timer) clearTimeout(timer);
+    }
 
     await waitForNetworkIdle(cdp);
   };
@@ -135,10 +148,19 @@ export async function connectToPage(
     getNewCapturedRequests() {
       return networkCapture.drainNew();
     },
+    settleNetwork(timeoutMs?: number) {
+      return networkCapture.settle(timeoutMs);
+    },
     startNetworkCapture,
     getCurrentUrl,
     close() {
       networkCapture.drain(); // detach listeners, discard data
+      // Close the underlying tab too (not just the socket) so a fresh-target
+      // session doesn't leak a Chrome page every time it's closed. Best effort:
+      // send before the socket goes, ignore if the target is already gone.
+      if (target?.id) {
+        cdp.send("Target.closeTarget", { targetId: target.id }).catch(() => {});
+      }
       cdp.close();
     },
   };

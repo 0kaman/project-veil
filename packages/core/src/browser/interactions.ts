@@ -50,7 +50,30 @@ export async function dispatchInteraction(
   }
 }
 
+/** Bring the element into the viewport before reading its box model — the
+ * content-quad coordinates are viewport-relative, so an element below the fold
+ * (or inside a scroll container) would otherwise be clicked at a coordinate
+ * that lands on whatever is currently visible there, not the target. */
+async function scrollIntoView(cdp: CDPClient, backendNodeId: number): Promise<void> {
+  try {
+    await cdp.send("DOM.scrollIntoViewIfNeeded", { backendNodeId });
+  } catch {
+    // Not all Chrome builds expose it, and detached nodes throw — fall back to
+    // a JS scroll so the box model is still meaningful.
+    try {
+      const { objectId } = await resolveNode(cdp, backendNodeId);
+      await cdp.send("Runtime.callFunctionOn", {
+        objectId,
+        functionDeclaration: `function() { this.scrollIntoView({ block: "center", inline: "center" }); }`,
+      });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 async function dispatchClick(cdp: CDPClient, backendNodeId: number): Promise<void> {
+  await scrollIntoView(cdp, backendNodeId);
   const boxModel = (await cdp.send("DOM.getBoxModel", { backendNodeId })) as BoxModelResult;
   const { x, y } = centerOf(boxModel);
 
@@ -72,14 +95,45 @@ async function dispatchClick(cdp: CDPClient, backendNodeId: number): Promise<voi
 }
 
 async function dispatchType(cdp: CDPClient, backendNodeId: number, text: string): Promise<void> {
+  await scrollIntoView(cdp, backendNodeId);
   await cdp.send("DOM.focus", { backendNodeId });
 
   // Monaco editors (VS Code, LeetCode, etc.) mangle Input.insertText with auto-indent.
   // Use Monaco's API directly when detected.
   const monacoSet = await tryMonacoSetValue(cdp, backendNodeId, text);
-  if (!monacoSet) {
-    await cdp.send("Input.insertText", { text });
-  }
+  if (monacoSet) return;
+
+  // Input.insertText inserts at the caret WITHOUT clearing — typing into a
+  // pre-filled field would concatenate garbage. Clear first (SelectAll+Delete
+  // keeps native editors, contenteditable, and framework inputs consistent),
+  // then insert the intended value.
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    modifiers: 4, // Ctrl (Cmd on mac is 8, but Ctrl+A selects in inputs cross-platform)
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    modifiers: 4,
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Delete",
+    code: "Delete",
+    windowsVirtualKeyCode: 46,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Delete",
+    code: "Delete",
+    windowsVirtualKeyCode: 46,
+  });
+  await cdp.send("Input.insertText", { text });
 }
 
 async function tryMonacoSetValue(
@@ -113,8 +167,17 @@ async function dispatchClear(cdp: CDPClient, backendNodeId: number): Promise<voi
   const { objectId } = await resolveNode(cdp, backendNodeId);
   await cdp.send("Runtime.callFunctionOn", {
     objectId,
+    // `.value = ""` is a dead no-op on contenteditable / rich editors (Slate,
+    // ProseMirror, Draft.js) — they have no value property. Branch on the
+    // element type so "clear" actually clears rich fields too.
     functionDeclaration: `function() {
-      this.value = "";
+      if (this.isContentEditable) {
+        this.textContent = "";
+      } else if ("value" in this) {
+        this.value = "";
+      } else {
+        this.textContent = "";
+      }
       this.dispatchEvent(new Event("input", { bubbles: true }));
       this.dispatchEvent(new Event("change", { bubbles: true }));
     }`,

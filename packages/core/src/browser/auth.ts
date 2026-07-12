@@ -1,6 +1,7 @@
 import { launchBrowser } from "./launcher.js";
 import { connectToPage } from "./page.js";
 import type { CDPClient } from "./cdp-client.js";
+import { debugLog } from "../debug.js";
 
 export interface AuthOptions {
   loginUrl?: string;           // defaults to session's current URL
@@ -79,20 +80,35 @@ export async function extractCookies(cdp: CDPClient): Promise<CdpCookie[]> {
 export async function injectCookies(
   cdp: CDPClient,
   cookies: CdpCookie[],
-): Promise<void> {
+): Promise<number> {
   await cdp.send("Network.clearBrowserCookies");
+  let injected = 0;
   for (const cookie of cookies) {
-    await cdp.send("Network.setCookie", {
-      name: cookie.name,
-      value: cookie.value,
-      domain: cookie.domain,
-      path: cookie.path,
-      secure: cookie.secure,
-      httpOnly: cookie.httpOnly,
-      sameSite: cookie.sameSite,
-      expires: cookie.expires > 0 ? cookie.expires : undefined,
-    });
+    try {
+      await cdp.send("Network.setCookie", {
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+        expires: cookie.expires > 0 ? cookie.expires : undefined,
+        // Carry partitioned (CHIPS) cookies across — dropping these silently
+        // broke auth on sites that partition their session cookie.
+        ...(cookie.partitionKey ? { partitionKey: cookie.partitionKey } : {}),
+        ...(cookie.sourceScheme ? { sourceScheme: cookie.sourceScheme } : {}),
+        ...(cookie.priority ? { priority: cookie.priority } : {}),
+      });
+      injected++;
+    } catch (err) {
+      // One rejected cookie (bad sameSite, unsupported partitionKey) must not
+      // abort the rest — we already cleared, so aborting would leave the session
+      // with FEWER cookies than before. Skip the bad one, keep going.
+      debugLog("auth: setCookie failed", cookie.name, err);
+    }
   }
+  return injected;
 }
 
 export async function performAuthFlow(

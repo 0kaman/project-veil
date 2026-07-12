@@ -130,16 +130,31 @@ async function main(): Promise<void> {
   await writeFile(PID_FILE, String(process.pid));
   console.log(`veil daemon listening on ${SOCKET_PATH}`);
 
-  const shutdown = async () => {
+  let shuttingDown = false;
+  const shutdown = async (code = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     server.close();
-    await manager.shutdown();
+    // Reap the shared Chrome + temp dirs. Chrome is a non-detached child, so
+    // without this a daemon crash reparents it to init and it runs forever.
+    await manager.shutdown().catch(() => {});
     await unlink(SOCKET_PATH).catch(() => {});
     await unlink(PID_FILE).catch(() => {});
-    process.exit(0);
+    process.exit(code);
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => shutdown(0));
+  process.on("SIGTERM", () => shutdown(0));
+  // Crash safety: a bug anywhere (e.g. a stray CDP frame) must not leave an
+  // orphaned Chrome and a stale socket/pid behind.
+  process.on("uncaughtException", (err) => {
+    console.error("veil daemon uncaught exception:", err);
+    void shutdown(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error("veil daemon unhandled rejection:", reason);
+    void shutdown(1);
+  });
 }
 
 main().catch((err) => {
