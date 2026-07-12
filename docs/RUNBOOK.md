@@ -67,6 +67,8 @@ read the updated graph.
 | `VEIL_ENRICH_API_KEY` | optional bearer token for the enricher |
 | `VEIL_NAV_TIMEOUT_MS` | navigation timeout before soft-fail to a partial graph (default 45000) |
 | `VEIL_MAX_NODES` | node budget; low-value bulk links pruned above it (default 800, 0=off) |
+| `VEIL_QUIET_MS` | event-driven settle: quiet window before an interaction is 'done' (default 40) |
+| `VEIL_QUIESCE_CAP_MS` | hard cap for never-idle pages (default 12000) |
 
 ## Run — CLI (developer/debug tool)
 

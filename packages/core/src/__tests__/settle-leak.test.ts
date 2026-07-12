@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { FakeCDPClient } from "./fixtures/fake-cdp.js";
 import {
-  waitForNetworkIdle,
+  awaitQuiescence,
   waitForDomSettle,
   waitForSettleOrNavigation,
 } from "../browser/page.js";
@@ -11,13 +11,14 @@ import {
  * helpers clean up their listeners. These were never broken, but they
  * are the building blocks B2 composes.
  */
-describe("waitForNetworkIdle / waitForDomSettle — primitive leak resistance", () => {
-  it("waitForNetworkIdle removes all listeners on resolution", async () => {
+describe("awaitQuiescence / waitForDomSettle — primitive leak resistance", () => {
+  it("awaitQuiescence (host fallback) removes all listeners on resolution", async () => {
     const cdp = new FakeCDPClient();
-    await waitForNetworkIdle(cdp);
+    await awaitQuiescence(cdp, { quietMs: 30 });
     expect(cdp.listenerCount("Network.requestWillBeSent")).toBe(0);
     expect(cdp.listenerCount("Network.loadingFinished")).toBe(0);
     expect(cdp.listenerCount("Network.loadingFailed")).toBe(0);
+    expect(cdp.listenerCount("DOM.childNodeInserted")).toBe(0);
   }, 10_000);
 
   it("waitForDomSettle removes all listeners on resolution", async () => {
@@ -62,6 +63,11 @@ describe("waitForSettleOrNavigation — settle-throw leak (B2)", () => {
     const cdp = new FakeCDPClient();
     let resolved = false;
     const promise = waitForSettleOrNavigation(cdp).then(() => { resolved = true; });
+    // Hold quiescence OPEN with an in-flight request that never finishes (emitted
+    // after the settle has subscribed to Network events), so the only thing that
+    // can resolve the wait is a real (top-frame) navigation — this isolates the
+    // nav-ignore logic under the event-driven settle.
+    setTimeout(() => cdp.emit("Network.requestWillBeSent", {}), 5);
 
     // Fire only subframe navigations — should NOT short-circuit the settle wait.
     setTimeout(() => {
@@ -69,7 +75,7 @@ describe("waitForSettleOrNavigation — settle-throw leak (B2)", () => {
       cdp.emit("Page.frameNavigated", { frame: { parentId: "ad-iframe-2" } });
     }, 20);
 
-    // At 100ms, settle hasn't naturally completed yet (network idle wait is 2s).
+    // Network is still busy + only subframe navs fired → must remain pending.
     await new Promise((r) => setTimeout(r, 100));
     expect(resolved).toBe(false);
 

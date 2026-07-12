@@ -36,7 +36,7 @@ export {
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
-import { waitForNetworkIdle, waitForDomSettle, waitForSettleOrNavigation } from "./browser/page.js";
+import { awaitQuiescence, waitForSettleOrNavigation } from "./browser/page.js";
 import { performAuthFlow, type AuthOptions, type AuthResult } from "./browser/auth.js";
 import type { CDPClient } from "./browser/cdp-client.js";
 import { buildGraphFromAXTree, patchGraphFromDiff, enrichStructuralEvents } from "./pipeline/stage-1-axtree.js";
@@ -203,8 +203,7 @@ export class VeilPage {
         });
 
         // New page settle
-        await waitForNetworkIdle(this.page.cdp);
-        await waitForDomSettle(this.page.cdp);
+        await awaitQuiescence(this.page.cdp);
 
         // Re-enable DOM tracking for new document
         await this.page.cdp.send("DOM.getDocument", { depth: -1 });
@@ -223,7 +222,7 @@ export class VeilPage {
         // SPA route change: the document never unloads, so there is no load
         // event to wait for — settle the network and rebuild the graph (a new
         // route is a new virtual page).
-        await waitForNetworkIdle(this.page.cdp);
+        await awaitQuiescence(this.page.cdp);
         this.url = await this.page.getCurrentUrl();
         this.cachedGraph = null;
         this.lastSnapshot = null;
@@ -338,8 +337,7 @@ export class VeilPage {
           this.lastSnapshot = null;
 
           // Wait for new page to settle, re-enable DOM tracking, rebuild + notify
-          waitForNetworkIdle(this.page.cdp)
-            .then(() => waitForDomSettle(this.page.cdp))
+          awaitQuiescence(this.page.cdp)
             .then(() => this.page.cdp.send("DOM.getDocument", { depth: -1 }))
             .then(() => this.getGraph())
             .then((newGraph) => this.notifyRebuild(prevNodeIds, newGraph))
@@ -562,8 +560,7 @@ export class Veil {
         }, 10_000);
         cdp.on("Page.loadEventFired", handler);
       });
-      await waitForNetworkIdle(cdp);
-      await waitForDomSettle(cdp);
+      await awaitQuiescence(cdp);
       page.invalidateCache();
       await page.getGraph(); // rebuild
     }

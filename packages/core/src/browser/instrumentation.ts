@@ -58,6 +58,24 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
   var NAV_CAP = 100;
   var LISTENER_CAP = 2000;
 
+  // --- Quiescence tracking: drives event-driven interaction settle ---
+  // Instead of the host waiting a fixed 2s and hoping the page is done, the page
+  // reports when it's ACTUALLY done reacting: no in-flight fetch/XHR AND no DOM
+  // mutation for a short window. whenQuiet() is awaited from the host via CDP.
+  var pending = 0;                 // in-flight fetch + XHR count
+  var lastRequestStart = 0;        // when the most recent request began
+  var lastMutation = Date.now();   // when the DOM last changed
+  function reqStart() { pending++; lastRequestStart = Date.now(); }
+  function reqEnd() { pending = pending > 0 ? pending - 1 : 0; }
+  try {
+    var mo = new MutationObserver(function() { lastMutation = Date.now(); });
+    var startObs = function() {
+      try { if (document.documentElement) mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true }); } catch (e) {}
+    };
+    startObs();
+    document.addEventListener('DOMContentLoaded', startObs);
+  } catch (e) {}
+
   // FIFO push: when arr is at cap, drop oldest entry to keep the most recent.
   // Previous implementation dropped NEW entries, causing long sessions to
   // retain stale initial-page traffic while recent activity went uncaptured.
@@ -105,7 +123,12 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
       stack: stack,
       timestamp: Date.now()
     }, NETWORK_CAP);
-    return origFetch.apply(this, arguments);
+    reqStart();
+    var fp = origFetch.apply(this, arguments);
+    // Attach a settle handler WITHOUT changing the promise the caller receives
+    // (returning fp, not fp.then(...)), so page semantics are untouched.
+    try { fp.then(reqEnd, reqEnd); } catch (e) { reqEnd(); }
+    return fp;
   };
 
   // --- Network proxy: XHR ---
@@ -128,6 +151,11 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
       stack: stack,
       timestamp: Date.now()
     }, NETWORK_CAP);
+    reqStart();
+    // 'loadend' fires exactly once on success, error, OR abort — one decrement.
+    var settled = false;
+    var dec = function() { if (!settled) { settled = true; reqEnd(); } };
+    try { this.addEventListener('loadend', dec); } catch (e) {}
     return origXHRSend.apply(this, arguments);
   };
 
@@ -185,6 +213,30 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
     },
     getNavigations: function() {
       return navigations.slice();
+    },
+    // Event-driven settle: resolves when the page is genuinely done reacting —
+    // no in-flight requests and the DOM has been quiet for a short window. The
+    // host awaits this over CDP (awaitPromise) instead of a fixed timer, so an
+    // idle interaction returns in ~a frame and a real fetch is waited out for
+    // exactly its real duration. A cap backstops pathological never-idle pages.
+    whenQuiet: function(opts) {
+      opts = opts || {};
+      var quietMs = opts.quietMs || 40;      // DOM-quiet window (~2-3 frames)
+      var cap = opts.capMs || 12000;         // pathological-page backstop
+      var start = Date.now();
+      return new Promise(function(resolve) {
+        function check() {
+          var now = Date.now();
+          if (now - start > cap) { resolve({ reason: 'cap', pending: pending }); return; }
+          var domQuiet = (now - lastMutation) >= quietMs;
+          var reqQuiet = pending <= 0 && (now - lastRequestStart) >= quietMs;
+          if (domQuiet && reqQuiet) { resolve({ reason: 'quiet' }); return; }
+          setTimeout(check, 12);
+        }
+        // Defer one macrotask so a handler firing a request/mutation synchronously
+        // after the interaction is observed before we sample.
+        setTimeout(check, 0);
+      });
     }
   };
 })();`;

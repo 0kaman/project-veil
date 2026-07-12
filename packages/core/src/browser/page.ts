@@ -120,7 +120,7 @@ export async function connectToPage(
     }
     if (timedOut) debugLog("navigate: load event timed out, building partial graph", url);
 
-    await waitForNetworkIdle(cdp);
+    await awaitQuiescence(cdp);
   };
 
   const getAXTree = async (): Promise<AXNode[]> => {
@@ -238,9 +238,10 @@ export async function waitForSettleOrNavigation(cdp: CDPClient): Promise<void> {
 
   try {
     const navPromise = new Promise<void>((r) => { resolveNav = r; });
+    // awaitQuiescence already covers BOTH network and DOM quiet in one
+    // event-driven wait — no more sequential network-then-dom fixed windows.
     const settlePromise = (async () => {
-      await waitForNetworkIdle(cdp);
-      await waitForDomSettle(cdp);
+      await awaitQuiescence(cdp);
       if (!settled) settled = true;
     })();
 
@@ -250,46 +251,77 @@ export async function waitForSettleOrNavigation(cdp: CDPClient): Promise<void> {
   }
 }
 
-export async function waitForNetworkIdle(cdp: CDPClient): Promise<void> {
-  let inflight = 0;
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  const IDLE_WAIT = 2_000;
-  const HARD_CAP = 5_000;
+// Event-driven settle window. QUIET_MS is how long the page must be free of
+// in-flight requests AND DOM mutation before we call it done — a few frames, not
+// the old fixed 2s. QUIESCE_CAP backstops pathological never-idle pages.
+const QUIET_MS = Number(process.env.VEIL_QUIET_MS) || 40;
+const QUIESCE_CAP = Number(process.env.VEIL_QUIESCE_CAP_MS) || 12_000;
 
+/**
+ * Wait until the page is genuinely done reacting — event-driven, not timed.
+ *
+ * Primary path: ask the injected instrumentation (window.__veil.whenQuiet),
+ * which tracks its OWN fetch/XHR completion + a MutationObserver, and resolve
+ * over CDP via awaitPromise. This waits EXACTLY the real network duration and
+ * returns in ~a frame when nothing happened — no fixed floor.
+ *
+ * Fallback path (strict-CSP pages where injection is blocked / __veil absent):
+ * a host-side quiescence counter driven by the same CDP events (in-flight from
+ * Network.*, activity from DOM.*). Same logic, computed host-side.
+ */
+export async function awaitQuiescence(
+  cdp: CDPClient,
+  opts: { quietMs?: number; capMs?: number } = {},
+): Promise<void> {
+  const quietMs = opts.quietMs ?? QUIET_MS;
+  const capMs = opts.capMs ?? QUIESCE_CAP;
+  try {
+    const res = (await cdp.send("Runtime.evaluate", {
+      expression:
+        `(window.__veil && window.__veil.whenQuiet) ` +
+        `? window.__veil.whenQuiet({quietMs:${quietMs},capMs:${capMs}}) : null`,
+      awaitPromise: true,
+      returnByValue: true,
+    })) as { result?: { value?: unknown } };
+    if (res.result && res.result.value != null) return; // page reported quiet
+    // value == null → __veil absent (injection blocked); use the host fallback.
+  } catch (err) {
+    debugLog("quiescence: page-side failed, host fallback", err);
+  }
+  await hostQuiescence(cdp, quietMs, capMs);
+}
+
+function hostQuiescence(cdp: CDPClient, quietMs: number, capMs: number): Promise<void> {
   return new Promise<void>((resolve) => {
-    const onRequest = () => {
-      inflight++;
-      if (idleTimer) {
-        clearTimeout(idleTimer);
-        idleTimer = undefined;
-      }
-    };
-
-    const onDone = () => {
-      inflight = Math.max(0, inflight - 1);
-      if (inflight === 0 && !idleTimer) {
-        idleTimer = setTimeout(cleanup, IDLE_WAIT);
-      }
-    };
-
-    const cleanup = () => {
-      cdp.off("Network.requestWillBeSent", onRequest);
+    let inflight = 0;
+    let lastActivity = Date.now();
+    let done = false;
+    const bump = () => (lastActivity = Date.now());
+    const onReq = () => { inflight++; bump(); };
+    const onDone = () => { inflight = Math.max(0, inflight - 1); bump(); };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      cdp.off("Network.requestWillBeSent", onReq);
       cdp.off("Network.loadingFinished", onDone);
       cdp.off("Network.loadingFailed", onDone);
-      if (idleTimer) clearTimeout(idleTimer);
-      if (hardCapTimer) clearTimeout(hardCapTimer);
+      cdp.off("DOM.childNodeInserted", bump);
+      cdp.off("DOM.childNodeRemoved", bump);
+      cdp.off("DOM.attributeModified", bump);
+      clearInterval(poll);
+      clearTimeout(cap);
       resolve();
     };
-
-    cdp.on("Network.requestWillBeSent", onRequest);
+    cdp.on("Network.requestWillBeSent", onReq);
     cdp.on("Network.loadingFinished", onDone);
     cdp.on("Network.loadingFailed", onDone);
-
-    // Start idle timer immediately (page might already be idle)
-    if (inflight === 0) {
-      idleTimer = setTimeout(cleanup, IDLE_WAIT);
-    }
-
-    const hardCapTimer = setTimeout(cleanup, HARD_CAP);
+    cdp.on("DOM.childNodeInserted", bump);
+    cdp.on("DOM.childNodeRemoved", bump);
+    cdp.on("DOM.attributeModified", bump);
+    const poll = setInterval(() => {
+      if (inflight <= 0 && Date.now() - lastActivity >= quietMs) finish();
+    }, 12);
+    const cap = setTimeout(finish, capMs);
   });
 }
+

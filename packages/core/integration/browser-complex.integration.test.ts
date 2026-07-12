@@ -143,6 +143,40 @@ suite("Veil — hard real-browser scenarios (Layer 2)", () => {
     }
   });
 
+  // --- event-driven settle: fast when idle, correct when busy --------------
+
+  it("an idle interaction settles fast (event-driven, no fixed 2s floor)", async () => {
+    const page = await veil.open(fixtures.url("/commerce"));
+    try {
+      const g = await page.getGraph();
+      const field = findNode(g, (n) => n.role === "searchbox" || n.role === "textbox");
+      const start = Date.now();
+      await page.interact(field!.id, { action: "focus" }); // touches no network/DOM
+      const elapsed = Date.now() - start;
+      // Pre-fix this paid a flat ~2s network-idle wait; now it's a few frames +
+      // the rebuild. Generous ceiling to stay robust on slow CI.
+      expect(elapsed).toBeLessThan(2500);
+    } finally {
+      page.close();
+    }
+  });
+
+  it("does NOT hang on a page with a persistent background poller", async () => {
+    // A 200ms heartbeat means the network is never permanently idle. The old
+    // fixed-idle wait could stall; event-driven settle resolves in the gaps.
+    const page = await veil.open(fixtures.url("/poller"));
+    try {
+      const g = await page.getGraph();
+      const refresh = findNode(g, (n) => /refresh/i.test(n.name))!;
+      const start = Date.now();
+      await page.interact(refresh.id, { action: "click" });
+      // Must complete well under the pathological hard cap (12s), not hang.
+      expect(Date.now() - start).toBeLessThan(6000);
+    } finally {
+      page.close();
+    }
+  });
+
   // --- a full multi-step agent workflow ------------------------------------
 
   it("runs a multi-step workflow: type two fields, values persist across reads", async () => {
