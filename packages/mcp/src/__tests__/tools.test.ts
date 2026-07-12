@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { SessionStore } from "../sessions.js";
+import { createSessionStore } from "../sessions.js";
 import { registerVeilTools } from "../tools.js";
 
 // --- a fake page + Veil that mimic the core contract without a browser -------
@@ -51,7 +51,7 @@ class FakeVeil {
   }
 }
 
-async function connectedClient(store: SessionStore) {
+async function connectedClient(store: ReturnType<typeof createSessionStore>) {
   const server = new McpServer({ name: "veil-test", version: "0.0.0" });
   registerVeilTools(server, store);
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -65,13 +65,12 @@ function textOf(res: { content: { type: string; text?: string }[] }): string {
 }
 
 describe("Veil MCP tools", () => {
-  let store: SessionStore;
+  let store: ReturnType<typeof createSessionStore>;
   let veil: FakeVeil;
 
   beforeEach(() => {
     veil = new FakeVeil();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    store = new SessionStore(veil as any);
+    store = createSessionStore(veil as never);
   });
   afterEach(async () => {
     await store.shutdown();

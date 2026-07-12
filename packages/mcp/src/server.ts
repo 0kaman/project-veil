@@ -13,11 +13,11 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { SessionStore } from "./sessions.js";
+import { createSessionStore } from "./sessions.js";
 import { registerVeilTools } from "./tools.js";
 
 async function main(): Promise<void> {
-  const store = new SessionStore();
+  const store = createSessionStore();
   const server = new McpServer({ name: "veil", version: "0.1.0" });
   registerVeilTools(server, store);
 

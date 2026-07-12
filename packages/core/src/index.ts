@@ -22,6 +22,7 @@ export { VeilError } from "./graph/model.js";
 export { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 export { buildDisplayIdRegistry, type DisplayIdRegistry } from "./graph/display-ids.js";
 export { queryNodes } from "./graph/query.js";
+export { SessionPool, type SessionInfo, type SessionPoolOptions } from "./session-pool.js";
 export { buildApiEndpoints } from "./pipeline/api-endpoints.js";
 export { groupComponents } from "./pipeline/stage-4-components.js";
 export { inferSemantics } from "./pipeline/stage-5-semantics.js";

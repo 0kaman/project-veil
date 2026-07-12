@@ -10,9 +10,10 @@
  * an in-memory transport in tests without spawning Chrome.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { serializeJGF, type InteractAction, type NodeFilter } from "@veil/core";
+import { serializeJGF, serializeCompactText, type InteractAction, type NodeFilter } from "@veil/core";
 import { z } from "zod";
-import { SessionStore, SessionError } from "./sessions.js";
+import type { SessionPool } from "@veil/core";
+import { SessionError } from "./sessions.js";
 
 type TextResult = {
   content: { type: "text"; text: string }[];
@@ -35,7 +36,7 @@ function guard(fn: () => Promise<TextResult>): Promise<TextResult> {
   return fn().catch(errorResult);
 }
 
-export function registerVeilTools(server: McpServer, store: SessionStore): void {
+export function registerVeilTools(server: McpServer, store: SessionPool): void {
   server.registerTool(
     "veil_open",
     {
@@ -117,7 +118,6 @@ export function registerVeilTools(server: McpServer, store: SessionStore): void 
             interaction = { action };
         }
         const graph = await page.interact(node, interaction);
-        const { serializeCompactText } = await import("@veil/core");
         return text(serializeCompactText(graph));
       }),
   );
