@@ -32,3 +32,13 @@
   persisted on edges, so `requestShape` can go stale after an incremental rebuild.
 - **`networkEdges` cap** on very long-lived analytics-heavy pages (unmatched edges
   aren't pruned).
+- **Large content pages (found via live real-site testing, 2026-07-12).** Running
+  Veil against real sites surfaced two things fixtures never would: (a) encyclopedia-
+  scale pages (a full Wikipedia article) can exceed the default 30s navigation
+  timeout — a smaller Wikipedia page built in ~9s with 1,828 nodes, the Cat article
+  timed out; make the nav timeout configurable and/or fail soft with a partial
+  graph. (b) The "50–300 node" compression target holds for app-shaped pages
+  (github.com/login: 30, MDN: 187) but NOT content-dense ones (Wikipedia: ~1,800
+  named links, all kept) — either calibrate the claim or add a content-collapse
+  pass for link-list-heavy regions. Live smoke tests live in
+  `integration/live-sites.integration.test.ts` (gated behind `VEIL_LIVE=1`).

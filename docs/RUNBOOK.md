@@ -23,6 +23,8 @@ pnpm check          # typecheck + build + test (what CI should run)
 pnpm test               # Layer 1 — hermetic (FakeCDPClient, in-memory MCP). Fast.
 pnpm test:integration   # Layer 2 — REAL headless Chrome vs local fixtures.
                         #            Auto-skips if Chrome is absent.
+pnpm test:live          # Live real sites (example/github/MDN); hits the
+                        #            internet, gated behind VEIL_LIVE=1.
 ```
 
 ## Run — MCP server (the prime interface)
