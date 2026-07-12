@@ -25,6 +25,12 @@ export { queryNodes } from "./graph/query.js";
 export { buildApiEndpoints } from "./pipeline/api-endpoints.js";
 export { groupComponents } from "./pipeline/stage-4-components.js";
 export { inferSemantics } from "./pipeline/stage-5-semantics.js";
+export {
+  type SemanticEnricher,
+  type EnrichCandidate,
+  type EnricherResult,
+  OpenAICompatEnricher,
+} from "./pipeline/enricher.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { connectToPage, type PageHandle } from "./browser/page.js";
@@ -44,6 +50,7 @@ import { VeilError } from "./graph/model.js";
 import { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 import { groupComponents, regroupComponents } from "./pipeline/stage-4-components.js";
 import { inferSemantics, reinferSemantics } from "./pipeline/stage-5-semantics.js";
+import type { SemanticEnricher } from "./pipeline/enricher.js";
 
 export class VeilPage {
   private page: PageHandle;
@@ -57,9 +64,12 @@ export class VeilPage {
   private updateInProgress = false;
   private pendingUpdate = false;
 
-  constructor(page: PageHandle, url: string) {
+  private enricher?: SemanticEnricher;
+
+  constructor(page: PageHandle, url: string, enricher?: SemanticEnricher) {
     this.page = page;
     this.url = url;
+    this.enricher = enricher;
   }
 
   /** Public entry — deduplicates concurrent calls via shared promise. */
@@ -101,7 +111,7 @@ export class VeilPage {
     await groupComponents(graph, this.page.cdp);
 
     // Stage 5: Semantic inference
-    await inferSemantics(graph);
+    await inferSemantics(graph, this.enricher);
 
     this.cachedGraph = graph;
 
@@ -484,9 +494,19 @@ export class VeilPage {
   }
 }
 
+export interface VeilOptions {
+  /** Pluggable LLM semantic enricher. Also configurable via VEIL_ENRICH_BASE_URL. */
+  enricher?: SemanticEnricher;
+}
+
 export class Veil {
   private browser: BrowserHandle | null = null;
   private launchPromise: Promise<BrowserHandle> | null = null;
+  private enricher?: SemanticEnricher;
+
+  constructor(options?: VeilOptions) {
+    this.enricher = options?.enricher;
+  }
 
   /** Launch (or reuse) the single shared browser. Guarded by an in-flight
    * promise so two concurrent open() calls — common under the daemon, whose
@@ -513,7 +533,7 @@ export class Veil {
     // hijack each other's page.
     const page = await connectToPage(browser.port, undefined, true);
     await page.navigate(url);
-    return new VeilPage(page, url);
+    return new VeilPage(page, url, this.enricher);
   }
 
   async auth(page: VeilPage, options?: AuthOptions): Promise<AuthResult> {

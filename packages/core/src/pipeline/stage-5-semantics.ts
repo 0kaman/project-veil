@@ -1,12 +1,39 @@
 import type { BehaviorGraph, BehaviorNode, SemanticLabel } from "../graph/model.js";
+import {
+  type SemanticEnricher,
+  OpenAICompatEnricher,
+  collectCandidates,
+  applyEnrichment,
+} from "./enricher.js";
+import { debugLog } from "../debug.js";
 
 /**
- * Stage 5: Infer semantic labels for nodes and component groups using heuristic rules.
+ * Stage 5: Infer semantic labels for nodes and component groups.
+ *
+ * Heuristics run first (offline, complete on their own). If a pluggable enricher
+ * is supplied (or configured via VEIL_ENRICH_BASE_URL), ambiguous low-confidence
+ * nodes are then handed to it for LLM labeling — this is where Walter's brain can
+ * label Veil's perceptions. Enrichment is best-effort and never blocks a build.
  */
-export async function inferSemantics(graph: BehaviorGraph): Promise<void> {
+export async function inferSemantics(
+  graph: BehaviorGraph,
+  enricher?: SemanticEnricher,
+): Promise<void> {
   applyNodeHeuristics(graph);
   applyGroupHeuristics(graph);
   propagateGroupLabels(graph);
+
+  const active = enricher ?? OpenAICompatEnricher.fromEnv();
+  if (active) {
+    try {
+      const candidates = collectCandidates(graph);
+      if (candidates.length > 0) {
+        applyEnrichment(graph, await active.enrich(candidates));
+      }
+    } catch (err) {
+      debugLog("stage-5: enrichment skipped", err);
+    }
+  }
 }
 
 /** Re-run heuristics. Used for incremental updates. */
