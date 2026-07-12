@@ -9,7 +9,7 @@ CLI Target: es2024
 ESM Build start
 ESM dist/index.js     110.91 KB
 ESM dist/index.js.map 242.22 KB
-ESM ⚡️ Build success in 49ms
+ESM ⚡️ Build success in 28ms
 DTS Build start
-DTS ⚡️ Build success in 580ms
+DTS ⚡️ Build success in 746ms
 DTS dist/index.d.ts 10.40 KB

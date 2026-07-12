@@ -1,0 +1,12 @@
+
+> @veil/mcp@0.1.0 build /Users/xtractor/develop/experimental/project-veil/packages/mcp
+> tsup src/server.ts --format esm --sourcemap
+
+CLI Building entry: src/server.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Target: es2024
+ESM Build start
+ESM dist/server.js     10.50 KB
+ESM dist/server.js.map 21.36 KB
+ESM ⚡️ Build success in 25ms
