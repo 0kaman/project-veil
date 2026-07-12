@@ -62,7 +62,7 @@ export interface SemanticLabel {
 
 export interface ComponentGroup {
   id: string;                              // "cg-react-searchbar" or "cg-vanilla-form-login"
-  framework: 'react' | 'vanilla' | 'unknown';
+  framework: 'react' | 'vanilla';  // ('unknown' was never produced — removed)
   componentName: string;                   // "SearchBar", "LoginForm", "form-group-1"
   props?: Record<string, unknown>;         // Serializable props (React only, max 10 primitive keys)
   memberNodeIds: string[];                 // BehaviorNode IDs in this group
