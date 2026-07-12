@@ -65,6 +65,8 @@ read the updated graph.
 | `VEIL_ENRICH_BASE_URL` | OpenAI-compatible endpoint for the LLM enricher (e.g. a local model, or Walter's brain) |
 | `VEIL_ENRICH_MODEL` | enricher model id (default `gpt-4o-mini`) |
 | `VEIL_ENRICH_API_KEY` | optional bearer token for the enricher |
+| `VEIL_NAV_TIMEOUT_MS` | navigation timeout before soft-fail to a partial graph (default 45000) |
+| `VEIL_MAX_NODES` | node budget; low-value bulk links pruned above it (default 800, 0=off) |
 
 ## Run — CLI (developer/debug tool)
 

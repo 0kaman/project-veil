@@ -89,6 +89,9 @@ export interface BehaviorGraph {
     title: string;
     timestamp: number;
     route: string;
+    /** How many low-value nodes the budget prune dropped (0/absent = none).
+     * Surfaced so a capped graph never looks complete. */
+    nodesTrimmed?: number;
   };
   version: number;
   nodes: Map<string, BehaviorNode>;

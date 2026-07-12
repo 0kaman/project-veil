@@ -26,6 +26,7 @@ export { SessionPool, type SessionInfo, type SessionPoolOptions } from "./sessio
 export { buildApiEndpoints } from "./pipeline/api-endpoints.js";
 export { groupComponents } from "./pipeline/stage-4-components.js";
 export { inferSemantics } from "./pipeline/stage-5-semantics.js";
+export { pruneToNodeBudget, MAX_NODES } from "./pipeline/prune.js";
 export {
   type SemanticEnricher,
   type EnrichCandidate,
@@ -51,6 +52,7 @@ import { VeilError } from "./graph/model.js";
 import { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 import { groupComponents, regroupComponents } from "./pipeline/stage-4-components.js";
 import { inferSemantics, reinferSemantics } from "./pipeline/stage-5-semantics.js";
+import { pruneToNodeBudget } from "./pipeline/prune.js";
 import type { SemanticEnricher } from "./pipeline/enricher.js";
 
 export class VeilPage {
@@ -113,6 +115,10 @@ export class VeilPage {
 
     // Stage 5: Semantic inference
     await inferSemantics(graph, this.enricher);
+
+    // Bound the graph on content-dense pages — drop low-value bulk links AFTER
+    // events/semantics are known so behavioral nodes are never the ones cut.
+    pruneToNodeBudget(graph);
 
     this.cachedGraph = graph;
 

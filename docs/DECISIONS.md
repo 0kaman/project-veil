@@ -32,13 +32,20 @@
   persisted on edges, so `requestShape` can go stale after an incremental rebuild.
 - **`networkEdges` cap** on very long-lived analytics-heavy pages (unmatched edges
   aren't pruned).
-- **Large content pages (found via live real-site testing, 2026-07-12).** Running
-  Veil against real sites surfaced two things fixtures never would: (a) encyclopedia-
-  scale pages (a full Wikipedia article) can exceed the default 30s navigation
-  timeout — a smaller Wikipedia page built in ~9s with 1,828 nodes, the Cat article
-  timed out; make the nav timeout configurable and/or fail soft with a partial
-  graph. (b) The "50–300 node" compression target holds for app-shaped pages
-  (github.com/login: 30, MDN: 187) but NOT content-dense ones (Wikipedia: ~1,800
-  named links, all kept) — either calibrate the claim or add a content-collapse
-  pass for link-list-heavy regions. Live smoke tests live in
-  `integration/live-sites.integration.test.ts` (gated behind `VEIL_LIVE=1`).
+- ~~Large content pages~~ **FIXED (2026-07-12).** Live real-site testing found
+  two failures on content-dense pages; both fixed:
+  - **Navigation timeout → soft-fail + configurable.** `navigate()` no longer
+    throws when the load event is slow; it builds a PARTIAL graph from what's
+    loaded (a partial perception beats a hard failure) and logs it. Default raised
+    30s → 45s, configurable via `VEIL_NAV_TIMEOUT_MS`. The Wikipedia Cat article,
+    which used to time out, now builds.
+  - **Node budget prune** (`pipeline/prune.ts`). After events/semantics are known,
+    an iterative pass drops the lowest-value leaves (plain content/nav links with
+    no behavioral handler), deepest-first, collapsing bulk-link subtrees — never a
+    form control, button, container, or event-bearing node. Budget `VEIL_MAX_NODES`
+    (default 800, 0 = unlimited); `metadata.nodesTrimmed` records the count so a
+    capped graph never looks complete. Results: Wikipedia HTTP 1,828 → 800,
+    Cat ~4,173 → 1,067 (all 25 buttons preserved), app pages unchanged
+    (github.com/login: 30, trimmed 0). Encyclopedia articles may still exceed the
+    budget when structural containers dominate — the prune is safe best-effort.
+  Live smoke tests: `integration/live-sites.integration.test.ts` (`VEIL_LIVE=1`).

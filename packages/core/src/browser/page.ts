@@ -2,6 +2,12 @@ import { createCDPClient, type CDPClient } from "./cdp-client.js";
 import { NetworkCapture } from "./network-capture.js";
 import { INSTRUMENTATION_SCRIPT } from "./instrumentation.js";
 import type { NetworkRequest } from "../graph/model.js";
+import { debugLog } from "../debug.js";
+
+// Default navigation timeout; encyclopedia-scale pages need more than the old
+// hard 30s. Configurable via env; navigation soft-fails (partial graph) rather
+// than throwing when it's exceeded.
+const NAV_TIMEOUT_MS = Number(process.env.VEIL_NAV_TIMEOUT_MS) || 45_000;
 
 export interface AXNode {
   nodeId: string;
@@ -79,9 +85,10 @@ export async function connectToPage(
   // Start capture immediately so requests are collected from the start
   await networkCapture.start();
 
-  const navigate = async (url: string, timeoutMs = 30_000): Promise<void> => {
+  const navigate = async (url: string, timeoutMs = NAV_TIMEOUT_MS): Promise<void> => {
     let handler: (() => void) | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     try {
       const loadPromise = new Promise<void>((resolve) => {
         handler = () => resolve();
@@ -90,13 +97,18 @@ export async function connectToPage(
 
       await cdp.send("Page.navigate", { url });
 
+      // SOFT-fail: an encyclopedia-scale page can still be loading at the
+      // timeout, but its DOM is usually interactive well before the load event.
+      // Resolving (not rejecting) lets us build a PARTIAL graph from what's
+      // there instead of failing the whole open() — a partial perception beats
+      // none. The timeout is configurable (VEIL_NAV_TIMEOUT_MS).
       await Promise.race([
         loadPromise,
-        new Promise<void>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error("Navigation timed out")),
-            timeoutMs,
-          );
+        new Promise<void>((resolve) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, timeoutMs);
         }),
       ]);
     } finally {
@@ -106,6 +118,7 @@ export async function connectToPage(
       if (handler) cdp.off("Page.loadEventFired", handler);
       if (timer) clearTimeout(timer);
     }
+    if (timedOut) debugLog("navigate: load event timed out, building partial graph", url);
 
     await waitForNetworkIdle(cdp);
   };
