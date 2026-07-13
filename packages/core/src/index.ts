@@ -17,6 +17,7 @@ export type {
   ApiEndpoint,
   ComponentGroup,
   SemanticLabel,
+  CapturedRequest,
 } from "./graph/model.js";
 export { VeilError } from "./graph/model.js";
 export { serializeCompactText, serializeJGF } from "./graph/serializer.js";
@@ -27,6 +28,7 @@ export { buildApiEndpoints } from "./pipeline/api-endpoints.js";
 export { groupComponents } from "./pipeline/stage-4-components.js";
 export { inferSemantics } from "./pipeline/stage-5-semantics.js";
 export { pruneToNodeBudget, MAX_NODES } from "./pipeline/prune.js";
+export { buildCapturedRequests } from "./pipeline/capture.js";
 export {
   type SemanticEnricher,
   type EnrichCandidate,
@@ -47,12 +49,13 @@ import { MutationWatcher } from "./browser/mutation-watcher.js";
 import { dispatchInteraction } from "./browser/interactions.js";
 import { buildDisplayIdRegistry } from "./graph/display-ids.js";
 import { queryNodes } from "./graph/query.js";
-import type { BehaviorGraph, BehaviorNode, InteractAction, NodeFilter, GraphDiff, GraphChangeCallback } from "./graph/model.js";
+import type { BehaviorGraph, BehaviorNode, InteractAction, NodeFilter, GraphDiff, GraphChangeCallback, CapturedRequest } from "./graph/model.js";
 import { VeilError } from "./graph/model.js";
 import { serializeCompactText, serializeJGF } from "./graph/serializer.js";
 import { groupComponents, regroupComponents } from "./pipeline/stage-4-components.js";
 import { inferSemantics, reinferSemantics } from "./pipeline/stage-5-semantics.js";
 import { pruneToNodeBudget } from "./pipeline/prune.js";
+import { buildCapturedRequests, indexByNode } from "./pipeline/capture.js";
 import type { SemanticEnricher } from "./pipeline/enricher.js";
 
 export class VeilPage {
@@ -66,6 +69,10 @@ export class VeilPage {
   private graphVersion = 0;
   private updateInProgress = false;
   private pendingUpdate = false;
+
+  // Replay cache: node id → the full requests its interaction fired. Populated
+  // from network correlation; the foundation of the direct-API fast path.
+  private capturedRequests = new Map<string, CapturedRequest[]>();
 
   private enricher?: SemanticEnricher;
 
@@ -106,6 +113,9 @@ export class VeilPage {
     await this.page.settleNetwork();
     const capturedRequests = this.page.getCapturedRequests();
     correlateNetwork(graph, capturedRequests);
+    // Record replayable request templates (full method/url/headers/body), keyed
+    // by the node that fired them — a fresh cache per full build.
+    this.capturedRequests = indexByNode(buildCapturedRequests(graph, capturedRequests));
 
     // drain() detaches CDP listeners — restart so future requests are captured
     await this.page.startNetworkCapture();
@@ -289,6 +299,21 @@ export class VeilPage {
     return this.resolveNode(graph, nodeId);
   }
 
+  /** The replayable request template(s) a node's interaction fired, if we've
+   * observed them (accepts internal AX id or display id). The raw material for
+   * the direct-API fast path: replay these with edited fields instead of
+   * re-clicking. Empty until an interaction (or prior load) reveals the request. */
+  async capturedRequestsFor(nodeId: string): Promise<CapturedRequest[]> {
+    const graph = await this.getGraph();
+    const node = this.resolveNode(graph, nodeId);
+    return node ? this.capturedRequests.get(node.id) ?? [] : [];
+  }
+
+  /** Every replayable request template captured this session. */
+  allCapturedRequests(): CapturedRequest[] {
+    return [...this.capturedRequests.values()].flat();
+  }
+
   async toCompactText(): Promise<string> {
     const graph = await this.getGraph();
     return serializeCompactText(graph);
@@ -422,6 +447,15 @@ export class VeilPage {
       const newRequests = this.page.getNewCapturedRequests();
       if (newRequests.length > 0) {
         correlateNetwork(this.cachedGraph, newRequests);
+        // Merge any newly-observed replayable requests into the cache — this is
+        // how an interaction TEACHES us its request the first time it fires.
+        for (const [nodeId, reqs] of indexByNode(
+          buildCapturedRequests(this.cachedGraph, newRequests),
+        )) {
+          const existing = this.capturedRequests.get(nodeId);
+          if (existing) existing.push(...reqs);
+          else this.capturedRequests.set(nodeId, reqs);
+        }
       }
 
       // 7. Remove stale networkEdges for removed nodes

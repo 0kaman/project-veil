@@ -21,8 +21,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     const path = url.pathname;
 
     if (path.startsWith("/api/")) {
+      // Echo the received body back — lets replay tests confirm the server saw
+      // the (edited) payload they sent.
+      let body = "";
+      for await (const chunk of req) body += chunk;
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, path, id: 42, items: ["a", "b"] }));
+      res.end(JSON.stringify({ ok: true, path, method: req.method, received: body }));
       return;
     }
 

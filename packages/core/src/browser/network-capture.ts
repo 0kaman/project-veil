@@ -17,7 +17,13 @@ interface CDPStackTrace {
 
 interface CDPRequestWillBeSent {
   requestId: string;
-  request: { url: string; method: string; postData?: string };
+  request: {
+    url: string;
+    method: string;
+    postData?: string;
+    hasPostData?: boolean;
+    headers?: Record<string, string>;
+  };
   initiator: {
     type: string;
     stack?: CDPStackTrace;
@@ -59,9 +65,14 @@ interface PendingRequest {
   initiatorStack?: CallFrame[];
   timestamp: number;
   requestBody?: string;
+  requestHeaders?: Record<string, string>;
+  resourceType?: string;
 }
 
 const MAX_COMPLETED = 2000;
+// Request bodies are kept for REPLAY, so they need the full payload (a submit
+// can carry a sizable form), not the 4KB used for shape inference.
+const MAX_REQUEST_BODY = 64 * 1024;
 
 export class NetworkCapture {
   private cdp: CDPClient;
@@ -107,8 +118,7 @@ export class NetworkCapture {
             : "other";
 
       const hasBody = p.request.method === "POST" || p.request.method === "PUT" || p.request.method === "PATCH";
-
-      this.pending.set(p.requestId, {
+      const record: PendingRequest = {
         requestId: p.requestId,
         method: p.request.method,
         url: p.request.url,
@@ -117,10 +127,25 @@ export class NetworkCapture {
           ? flattenStack(p.initiator.stack)
           : undefined,
         timestamp: p.timestamp,
-        ...(hasBody && p.request.postData && {
-          requestBody: p.request.postData.slice(0, 4096),
-        }),
-      });
+        resourceType: p.type,
+        // Full app-set request headers — captured for REPLAY (content-type,
+        // X-CSRF-Token, X-Requested-With, etc.). Cookies/auth added by the
+        // browser at replay time are NOT here and don't need to be.
+        requestHeaders: p.request.headers ? { ...p.request.headers } : undefined,
+      };
+      if (hasBody && p.request.postData) {
+        record.requestBody = p.request.postData.slice(0, MAX_REQUEST_BODY);
+      } else if (hasBody && p.request.hasPostData) {
+        // Body wasn't inlined in the event (large) — fetch it for replay.
+        this.cdp
+          .send("Network.getRequestPostData", { requestId: p.requestId })
+          .then((r) => {
+            const data = (r as { postData?: string }).postData;
+            if (data) record.requestBody = data.slice(0, MAX_REQUEST_BODY);
+          })
+          .catch(() => {});
+      }
+      this.pending.set(p.requestId, record);
     };
 
     this.onResponse = (params: unknown) => {

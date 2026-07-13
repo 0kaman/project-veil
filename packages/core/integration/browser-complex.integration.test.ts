@@ -177,6 +177,99 @@ suite("Veil — hard real-browser scenarios (Layer 2)", () => {
     }
   });
 
+  // --- capture layer: full-fidelity request capture + proof of replay ------
+
+  it("captures the full request an interaction fires, attributed to its node", async () => {
+    const page = await veil.open(fixtures.url("/commerce"));
+    try {
+      await page.getGraph();
+      const cart = findNode(await page.getGraph(), (n) => /add to cart/i.test(n.name))!;
+      await page.interact(cart.id, { action: "click" }); // fires POST /api/cart
+
+      const captured = await page.capturedRequestsFor(cart.id);
+      expect(captured.length).toBeGreaterThan(0);
+      const post = captured.find((c) => /\/api\/cart$/.test(c.url))!;
+      expect(post.method).toBe("POST");
+      expect(post.body).toContain("wh-1");                 // real body captured
+      expect(post.headers["content-type"]).toMatch(/json/); // real headers captured
+      expect(post.triggerNodeId).toBe(cart.id);            // correct attribution
+    } finally {
+      page.close();
+    }
+  });
+
+  it("PROOF OF REPLAY: a captured request replays in-page with an edited field", async () => {
+    // The whole premise of the direct-API fast path: capture once, then replay
+    // the real request with new values — no re-clicking. Here we bump qty 1→5
+    // and confirm the server receives the edited payload.
+    const page = await veil.open(fixtures.url("/commerce"));
+    try {
+      await page.getGraph();
+      const cart = findNode(await page.getGraph(), (n) => /add to cart/i.test(n.name))!;
+      await page.interact(cart.id, { action: "click" });
+      const post = (await page.capturedRequestsFor(cart.id)).find((c) => /\/api\/cart/.test(c.url))!;
+      expect(post).toBeTruthy();
+
+      const edited = JSON.stringify({ ...JSON.parse(post.body!), qty: 5 });
+      // Replay through the page's OWN fetch (inherits cookies/session/CSRF) — the
+      // technique that makes direct-API viable. Server echoes what it received.
+      const echo = (await page.getCdp().send("Runtime.evaluate", {
+        expression:
+          `fetch(${JSON.stringify(post.url)}, {method:${JSON.stringify(post.method)},` +
+          `headers:${JSON.stringify(post.headers)},body:${JSON.stringify(edited)}})` +
+          `.then(r=>r.text())`,
+        awaitPromise: true,
+        returnByValue: true,
+      })) as { result?: { value?: string } };
+      const serverSaw = JSON.parse(echo.result!.value!);
+      expect(serverSaw.method).toBe("POST");
+      expect(JSON.parse(serverSaw.received).qty).toBe(5); // the EDITED field landed
+    } finally {
+      page.close();
+    }
+  });
+
+  it("BENCHMARK: direct-API replay vs simulated interaction", async () => {
+    const page = await veil.open(fixtures.url("/commerce"));
+    try {
+      await page.getGraph();
+      const cart = findNode(await page.getGraph(), (n) => /add to cart/i.test(n.name))!;
+      await page.interact(cart.id, { action: "click" }); // warm the capture
+      const tmpl = (await page.capturedRequestsFor(cart.id)).find((c) => /\/api\/cart/.test(c.url))!;
+      const cdp = page.getCdp();
+
+      const N = 5;
+      let t = Date.now();
+      for (let i = 0; i < N; i++) await page.interact(cart.id, { action: "click" });
+      const simMs = Date.now() - t;
+
+      t = Date.now();
+      for (let i = 0; i < N; i++) {
+        await cdp.send("Runtime.evaluate", {
+          expression:
+            `fetch(${JSON.stringify(tmpl.url)},{method:"POST",` +
+            `headers:${JSON.stringify(tmpl.headers)},body:${JSON.stringify(tmpl.body)}})` +
+            `.then(r=>r.text())`,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+      }
+      const directMs = Date.now() - t;
+
+      // eslint-disable-next-line no-console
+      console.log(
+        `\n  [capture bench] simulated click: ${Math.round(simMs / N)}ms/action  |  ` +
+          `direct replay: ${Math.round(directMs / N)}ms/action  |  ` +
+          `${(simMs / directMs).toFixed(1)}x faster`,
+      );
+      // Direct replay skips dispatch + settle + full graph rebuild — must be
+      // materially faster than simulating the interaction.
+      expect(directMs).toBeLessThan(simMs);
+    } finally {
+      page.close();
+    }
+  });
+
   // --- a full multi-step agent workflow ------------------------------------
 
   it("runs a multi-step workflow: type two fields, values persist across reads", async () => {

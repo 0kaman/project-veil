@@ -15,8 +15,26 @@ export interface NetworkRequest {
   responseStatus?: number;
   responseContentType?: string;
   timestamp: number;
-  responseBody?: string;   // Raw JSON body (truncated to 4KB)
-  requestBody?: string;    // POST/PUT body (truncated to 4KB)
+  responseBody?: string;    // Raw JSON body (truncated to 4KB)
+  requestBody?: string;     // POST/PUT body (full, for replay — capped at 64KB)
+  requestHeaders?: Record<string, string>;  // app-set headers, for replay
+  resourceType?: string;    // XHR | Fetch | Document
+}
+
+/**
+ * A replayable request template — the FULL real request an interaction fired,
+ * captured so it can later be re-issued directly (with edited fields) instead of
+ * re-simulating the click. The foundation of the direct-API fast path.
+ */
+export interface CapturedRequest {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+  resourceType?: string;
+  triggerNodeId: string;    // the node whose interaction produced this request
+  triggerEvent: string;     // 'click' | 'submit' | ...
+  timestamp: number;
 }
 
 export interface NetworkEdge {
@@ -29,6 +47,7 @@ export interface NetworkEdge {
     bodyShape?: Record<string, string>;  // { name: "string", id: "number" }
   };
   urlPattern?: string;  // /api/users/{id}
+  replayable?: boolean; // a full CapturedRequest exists for this edge's node
 }
 
 export interface ApiEndpoint {
