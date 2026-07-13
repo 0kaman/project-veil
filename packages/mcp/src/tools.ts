@@ -123,6 +123,35 @@ export function registerVeilTools(server: McpServer, store: SessionPool): void {
   );
 
   server.registerTool(
+    "veil_replay",
+    {
+      title: "Replay a node's API call directly (fast path)",
+      description:
+        "Fire the request a node's interaction would trigger DIRECTLY, without " +
+        "simulating a click — far faster, and you can edit fields. Only works after " +
+        "the interaction has been observed once (veil_do teaches the request); check " +
+        "with the node's 'replayable' flag in the graph. Returns the API response. " +
+        "Does NOT update the page DOM — read the graph again if you need the new state.",
+      inputSchema: {
+        session: z.string().describe("Session id."),
+        node: z.string().describe("Node display id whose request to replay."),
+        body: z.record(z.unknown()).optional().describe("Fields merged into the request body."),
+        query: z.record(z.string()).optional().describe("URL query parameters to set."),
+        headers: z.record(z.string()).optional().describe("Headers to add/override."),
+      },
+    },
+    ({ session, node, body, query, headers }) =>
+      guard(async () => {
+        const page = store.page(session);
+        const res = await page.replay(node, { body, query, headers });
+        return text(
+          `${res.status} ${res.statusText}\n` +
+            (res.json !== undefined ? JSON.stringify(res.json, null, 2) : res.body.slice(0, 4000)),
+        );
+      }),
+  );
+
+  server.registerTool(
     "veil_query",
     {
       title: "Query nodes",

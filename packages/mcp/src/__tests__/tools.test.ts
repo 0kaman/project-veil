@@ -76,7 +76,7 @@ describe("Veil MCP tools", () => {
     await store.shutdown();
   });
 
-  it("lists all seven tools", async () => {
+  it("lists all eight tools", async () => {
     const client = await connectedClient(store);
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
@@ -87,6 +87,7 @@ describe("Veil MCP tools", () => {
       "veil_graph",
       "veil_open",
       "veil_query",
+      "veil_replay",
       "veil_sessions",
     ]);
   });

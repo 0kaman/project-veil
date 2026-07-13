@@ -229,6 +229,65 @@ suite("Veil — hard real-browser scenarios (Layer 2)", () => {
     }
   });
 
+  it("replay() fires the captured request with edits and returns the response", async () => {
+    const page = await veil.open(fixtures.url("/commerce"));
+    try {
+      await page.getGraph();
+      const cart = findNode(await page.getGraph(), (n) => /add to cart/i.test(n.name))!;
+      await page.interact(cart.id, { action: "click" }); // teach the request
+
+      expect(await page.canReplay(cart.id)).toBe(true);
+      const res = await page.replay(cart.id, { body: { qty: 7 } });
+      expect(res.ok).toBe(true);
+      expect(res.status).toBe(200);
+      // server echoes what it received → the edited qty must be there
+      const received = JSON.parse((res.json as { received: string }).received);
+      expect(received.qty).toBe(7);
+      expect(received.sku).toBe("wh-1"); // untouched field preserved
+    } finally {
+      page.close();
+    }
+  });
+
+  it("execute() auto-picks direct when a template exists, simulate when not", async () => {
+    const page = await veil.open(fixtures.url("/commerce"));
+    try {
+      const g = await page.getGraph();
+      // a link with no captured request → auto falls back to simulated interaction
+      const link = findNode(g, (n) => n.role === "link")!;
+      const simResult = await page.execute(link.id, { action: "click" });
+      expect(simResult.mode).toBe("simulate");
+
+      // the cart button, once taught, → direct
+      const page2 = await veil.open(fixtures.url("/commerce"));
+      try {
+        await page2.getGraph();
+        const cart = findNode(await page2.getGraph(), (n) => /add to cart/i.test(n.name))!;
+        await page2.interact(cart.id, { action: "click" });
+        const directResult = await page2.execute(cart.id, { action: "click" }, { edits: { body: { qty: 2 } } });
+        expect(directResult.mode).toBe("direct");
+        if (directResult.mode === "direct") {
+          expect(JSON.parse((directResult.response.json as { received: string }).received).qty).toBe(2);
+        }
+      } finally {
+        page2.close();
+      }
+    } finally {
+      page.close();
+    }
+  });
+
+  it("replay() throws NO_CAPTURE for a node we've never seen fire a request", async () => {
+    const page = await veil.open(fixtures.url("/commerce"));
+    try {
+      const g = await page.getGraph();
+      const link = findNode(g, (n) => n.role === "link")!;
+      await expect(page.replay(link.id)).rejects.toThrow(/NO_CAPTURE|No captured/);
+    } finally {
+      page.close();
+    }
+  });
+
   it("BENCHMARK: direct-API replay vs simulated interaction", async () => {
     const page = await veil.open(fixtures.url("/commerce"));
     try {

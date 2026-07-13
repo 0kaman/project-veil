@@ -151,7 +151,9 @@ export interface NodeFilter {
 export type VeilErrorCode =
   | "NODE_NOT_FOUND"
   | "NODE_NOT_INTERACTIVE"
-  | "INTERACTION_FAILED";
+  | "INTERACTION_FAILED"
+  | "NO_CAPTURE"
+  | "REPLAY_FAILED";
 
 export class VeilError extends Error {
   code: VeilErrorCode;

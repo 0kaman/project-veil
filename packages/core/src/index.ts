@@ -29,6 +29,7 @@ export { groupComponents } from "./pipeline/stage-4-components.js";
 export { inferSemantics } from "./pipeline/stage-5-semantics.js";
 export { pruneToNodeBudget, MAX_NODES } from "./pipeline/prune.js";
 export { buildCapturedRequests } from "./pipeline/capture.js";
+export { applyEdits, type ReplayEdits, type ReplayResult, type ConcreteRequest } from "./browser/replay.js";
 export {
   type SemanticEnricher,
   type EnrichCandidate,
@@ -56,7 +57,18 @@ import { groupComponents, regroupComponents } from "./pipeline/stage-4-component
 import { inferSemantics, reinferSemantics } from "./pipeline/stage-5-semantics.js";
 import { pruneToNodeBudget } from "./pipeline/prune.js";
 import { buildCapturedRequests, indexByNode } from "./pipeline/capture.js";
+import { applyEdits, fireRequest, type ReplayEdits, type ReplayResult } from "./browser/replay.js";
 import type { SemanticEnricher } from "./pipeline/enricher.js";
+
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+/** Pick the most meaningful captured template for a node: a mutating request
+ * over a GET, then the most recently observed. */
+function pickReplayTemplate(templates: CapturedRequest[]): CapturedRequest {
+  const mutating = templates.filter((t) => MUTATING_METHODS.has(t.method));
+  const pool = mutating.length > 0 ? mutating : templates;
+  return pool.reduce((a, b) => (b.timestamp >= a.timestamp ? b : a));
+}
 
 export class VeilPage {
   private page: PageHandle;
@@ -312,6 +324,52 @@ export class VeilPage {
   /** Every replayable request template captured this session. */
   allCapturedRequests(): CapturedRequest[] {
     return [...this.capturedRequests.values()].flat();
+  }
+
+  /** True if a node has a captured request template we can replay directly. */
+  async canReplay(nodeId: string): Promise<boolean> {
+    return (await this.capturedRequestsFor(nodeId)).length > 0;
+  }
+
+  /**
+   * Direct-API execution: replay the request a node's interaction fired, with
+   * optional field edits, WITHOUT re-simulating the click. Fires through the
+   * page's own fetch (inherits cookies/session/CSRF). Returns the API response.
+   *
+   * This does NOT rebuild the behavior graph — a raw request changes server
+   * state and returns data; it does not drive the app's DOM. Read the graph
+   * afterward if you need the resulting page state. Throws NO_CAPTURE when the
+   * node has no captured template (caller can fall back to interact()).
+   */
+  async replay(nodeId: string, edits?: ReplayEdits): Promise<ReplayResult> {
+    const templates = await this.capturedRequestsFor(nodeId);
+    if (templates.length === 0) {
+      throw new VeilError("NO_CAPTURE", `No captured request to replay for node "${nodeId}"`);
+    }
+    // Prefer a mutating template (the meaningful action) then most recent.
+    const tmpl = pickReplayTemplate(templates);
+    return fireRequest(this.page.cdp, applyEdits(tmpl, edits));
+  }
+
+  /**
+   * Two-tier execution. mode 'auto' (default) replays directly when a template
+   * exists (fast path) else simulates the interaction; 'direct' forces replay;
+   * 'simulate' forces the DOM interaction. Returns a discriminated result.
+   */
+  async execute(
+    nodeId: string,
+    action: InteractAction,
+    opts: { mode?: "auto" | "direct" | "simulate"; edits?: ReplayEdits } = {},
+  ): Promise<
+    | { mode: "direct"; response: ReplayResult }
+    | { mode: "simulate"; graph: BehaviorGraph }
+  > {
+    const mode = opts.mode ?? "auto";
+    const replayable = mode !== "simulate" && (await this.canReplay(nodeId));
+    if (mode === "direct" || (mode === "auto" && replayable)) {
+      return { mode: "direct", response: await this.replay(nodeId, opts.edits) };
+    }
+    return { mode: "simulate", graph: await this.interact(nodeId, action) };
   }
 
   async toCompactText(): Promise<string> {

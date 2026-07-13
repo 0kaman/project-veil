@@ -25,6 +25,10 @@ pnpm test:integration   # Layer 2 — REAL headless Chrome vs local fixtures.
                         #            Auto-skips if Chrome is absent.
 pnpm test:live          # Live real sites (example/github/MDN); hits the
                         #            internet, gated behind VEIL_LIVE=1.
+
+# direct-API replay vs simulated interaction benchmark:
+node packages/core/bench/replay-benchmark.mjs           # instant API
+API_DELAY=200 node packages/core/bench/replay-benchmark.mjs  # 200ms API
 ```
 
 ## Run — MCP server (the prime interface)

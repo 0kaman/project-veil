@@ -62,8 +62,8 @@ Veil's primary interface is a **Model Context Protocol server**, so any MCP host
 claude mcp add veil -- node /ABS/PATH/project-veil/packages/mcp/dist/server.js
 ```
 
-Tools: `veil_open`, `veil_graph`, `veil_do`, `veil_query`, `veil_auth`,
-`veil_sessions`, `veil_close`. See [docs/RUNBOOK.md](docs/RUNBOOK.md) for config
+Tools: `veil_open`, `veil_graph`, `veil_do`, `veil_replay` (direct-API fast
+path), `veil_query`, `veil_auth`, `veil_sessions`, `veil_close`. See [docs/RUNBOOK.md](docs/RUNBOOK.md) for config
 JSON and env vars.
 
 ## Use it — from the CLI (developer tool)
