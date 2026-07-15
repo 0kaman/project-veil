@@ -4,3 +4,12 @@ dist/
 *.tsbuildinfo
 .turbo/
 **/.turbo/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Playground trace logs
+traces/
+*.trace.jsonl

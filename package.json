@@ -12,7 +12,9 @@
     "typecheck": "turbo typecheck",
     "test:integration": "pnpm --filter @veil/core test:integration",
     "check": "turbo typecheck build test",
-    "test:live": "VEIL_LIVE=1 pnpm --filter @veil/core test:integration"
+    "test:live": "VEIL_LIVE=1 pnpm --filter @veil/core test:integration",
+    "play": "pnpm --filter @veil/playground dev",
+    "play:analyse": "pnpm --filter @veil/playground analyse"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
