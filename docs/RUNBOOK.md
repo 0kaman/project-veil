@@ -73,6 +73,7 @@ read the updated graph.
 | `VEIL_MAX_NODES` | node budget; low-value bulk links pruned above it (default 800, 0=off) |
 | `VEIL_QUIET_MS` | event-driven settle: quiet window before an interaction is 'done' (default 40) |
 | `VEIL_QUIESCE_CAP_MS` | hard cap for never-idle pages (default 12000) |
+| `VEIL_LONGPOLL_MS` | a request in flight longer than this stops blocking settle — it's a persistent connection (long-poll/SSE), not work the page is waiting on (default 2000) |
 
 ## Run — CLI (developer/debug tool)
 

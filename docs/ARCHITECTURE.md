@@ -59,6 +59,18 @@ layer needs.
 - `browser/page.ts` — a per-tab CDP session (`PageHandle`). Each `Veil.open()`
   creates its **own** tab (`freshTarget`) so concurrent sessions can't hijack one
   another's page; `close()` closes the tab, not just the socket.
+  Also **`awaitQuiescence`** — the event-driven settle every navigation and
+  interaction waits on. It asks the injected `window.__veil.whenQuiet()` (page-
+  side; a host-side fallback covers strict-CSP pages where injection is blocked)
+  to report when the page has stopped reacting: DOM quiet **and** no *young*
+  in-flight request, for `VEIL_QUIET_MS` (40). **Only young requests count.** A
+  request in flight past `VEIL_LONGPOLL_MS` (2s) is a persistent connection —
+  long-poll, SSE-over-XHR, keepalive — that will never close, and real sites
+  hold them open forever (google's autocomplete XHR does). Requiring *zero*
+  in-flight requests made settle unreachable there, silently degrading it into a
+  flat `VEIL_QUIESCE_CAP_MS` (12s) timeout **per action**. Late data still lands
+  via the mutation-watcher's incremental update, so settling early loses nothing.
+  See DECISIONS 2026-07-15.
 - `browser/network-capture.ts` — captures XHR/Fetch/Document requests with full
   async initiator stacks (`Debugger.setAsyncCallStackDepth`). Response bodies are
   fetched and **awaited** (`settle()`) before shape inference.
