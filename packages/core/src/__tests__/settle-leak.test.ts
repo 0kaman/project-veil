@@ -66,8 +66,9 @@ describe("waitForSettleOrNavigation — settle-throw leak (B2)", () => {
     // Hold quiescence OPEN with an in-flight request that never finishes (emitted
     // after the settle has subscribed to Network events), so the only thing that
     // can resolve the wait is a real (top-frame) navigation — this isolates the
-    // nav-ignore logic under the event-driven settle.
-    setTimeout(() => cdp.emit("Network.requestWillBeSent", {}), 5);
+    // nav-ignore logic under the event-driven settle. requestId is required:
+    // settle keys in-flight requests by id, as real CDP always supplies one.
+    setTimeout(() => cdp.emit("Network.requestWillBeSent", { requestId: "r1" }), 5);
 
     // Fire only subframe navigations — should NOT short-circuit the settle wait.
     setTimeout(() => {

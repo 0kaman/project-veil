@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Long-poll — Fixture</title>
+  </head>
+  <body>
+    <!-- A page holding a request open FOREVER. This is not exotic: google's
+         autocomplete XHR (/complete/s) behaves exactly like this, as do chat
+         apps, live dashboards and anything using SSE-over-XHR.
+
+         The old settle required ZERO in-flight requests, so this pinned it and
+         every action burned the full quiescence cap (12s). Settle must ignore a
+         connection this old and return promptly. See DECISIONS 2026-07-15. -->
+    <main>
+      <h1>Live feed</h1>
+      <button id="send">Send</button>
+      <div id="status">idle</div>
+    </main>
+    <script>
+      // Never completes — the server sends headers and holds the socket.
+      var poll = new XMLHttpRequest();
+      poll.open("GET", "/hang");
+      poll.send();
+
+      // A never-closing fetch too, so both proxied paths are covered.
+      fetch("/hang").catch(function () {});
+
+      document.getElementById("send").addEventListener("click", function () {
+        fetch("/api/send", { method: "POST", body: JSON.stringify({ ok: 1 }) }).then(function () {
+          document.getElementById("status").textContent = "sent";
+        });
+      });
+    </script>
+  </body>
+</html>

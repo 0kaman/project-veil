@@ -62,11 +62,31 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
   // Instead of the host waiting a fixed 2s and hoping the page is done, the page
   // reports when it's ACTUALLY done reacting: no in-flight fetch/XHR AND no DOM
   // mutation for a short window. whenQuiet() is awaited from the host via CDP.
-  var pending = 0;                 // in-flight fetch + XHR count
+  //
+  // Requests are keyed by a synthetic id -> the ms they STARTED, not counted as
+  // a bare integer. A counter cannot tell "a request the page is waiting on"
+  // from "a long-poll that will never close" — and real pages hold connections
+  // open forever (google's autocomplete XHR, SSE-over-XHR, chat, dashboards).
+  // With a plain counter those pin the count above zero permanently, so settle
+  // can never fire and every interaction burns the full cap. A start time lets
+  // whenQuiet ignore connections too old to be what the page is waiting on.
+  var inflight = {};               // id -> startedAt (plain object: ES5-safe)
+  var reqSeq = 0;
   var lastRequestStart = 0;        // when the most recent request began
   var lastMutation = Date.now();   // when the DOM last changed
-  function reqStart() { pending++; lastRequestStart = Date.now(); }
-  function reqEnd() { pending = pending > 0 ? pending - 1 : 0; }
+  function reqStart() { var id = ++reqSeq; inflight[id] = Date.now(); lastRequestStart = Date.now(); return id; }
+  function reqEnd(id) { delete inflight[id]; }
+  // Requests started within longLivedMs — i.e. still plausibly in progress.
+  function youngPending(now, longLivedMs) {
+    var n = 0;
+    for (var k in inflight) { if (Object.prototype.hasOwnProperty.call(inflight, k) && (now - inflight[k]) < longLivedMs) n++; }
+    return n;
+  }
+  function totalPending() {
+    var n = 0;
+    for (var k in inflight) { if (Object.prototype.hasOwnProperty.call(inflight, k)) n++; }
+    return n;
+  }
   try {
     var mo = new MutationObserver(function() { lastMutation = Date.now(); });
     var startObs = function() {
@@ -123,11 +143,14 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
       stack: stack,
       timestamp: Date.now()
     }, NETWORK_CAP);
-    reqStart();
+    var rid = reqStart();
     var fp = origFetch.apply(this, arguments);
     // Attach a settle handler WITHOUT changing the promise the caller receives
     // (returning fp, not fp.then(...)), so page semantics are untouched.
-    try { fp.then(reqEnd, reqEnd); } catch (e) { reqEnd(); }
+    // Bound to rid: reqEnd now takes an id, and a rejected fetch must release
+    // its slot too — hence the same handler on both paths.
+    var end = function() { reqEnd(rid); };
+    try { fp.then(end, end); } catch (e) { end(); }
     return fp;
   };
 
@@ -151,10 +174,10 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
       stack: stack,
       timestamp: Date.now()
     }, NETWORK_CAP);
-    reqStart();
-    // 'loadend' fires exactly once on success, error, OR abort — one decrement.
+    var rid = reqStart();
+    // 'loadend' fires exactly once on success, error, OR abort — one release.
     var settled = false;
-    var dec = function() { if (!settled) { settled = true; reqEnd(); } };
+    var dec = function() { if (!settled) { settled = true; reqEnd(rid); } };
     try { this.addEventListener('loadend', dec); } catch (e) {}
     return origXHRSend.apply(this, arguments);
   };
@@ -223,13 +246,25 @@ export const INSTRUMENTATION_SCRIPT = `(function() {
       opts = opts || {};
       var quietMs = opts.quietMs || 40;      // DOM-quiet window (~2-3 frames)
       var cap = opts.capMs || 12000;         // pathological-page backstop
+      var longLivedMs = opts.longLivedMs || 2000;
       var start = Date.now();
       return new Promise(function(resolve) {
         function check() {
           var now = Date.now();
-          if (now - start > cap) { resolve({ reason: 'cap', pending: pending }); return; }
+          var young = youngPending(now, longLivedMs);
+          if (now - start > cap) {
+            resolve({ reason: 'cap', pending: totalPending(), young: young });
+            return;
+          }
           var domQuiet = (now - lastMutation) >= quietMs;
-          var reqQuiet = pending <= 0 && (now - lastRequestStart) >= quietMs;
+          // Only requests YOUNG enough to still be "the page working" block
+          // settle. A request open longer than longLivedMs is a persistent
+          // connection (long-poll, SSE-over-XHR, keepalive) that will never
+          // close; waiting for it degrades this event-driven settle into a
+          // fixed cap-length timeout on every action. Data that lands later
+          // still reaches the graph via the MutationWatcher's incremental
+          // update path, so settling early loses nothing permanently.
+          var reqQuiet = young === 0 && (now - lastRequestStart) >= quietMs;
           if (domQuiet && reqQuiet) { resolve({ reason: 'quiet' }); return; }
           setTimeout(check, 12);
         }

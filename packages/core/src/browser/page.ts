@@ -251,11 +251,24 @@ export async function waitForSettleOrNavigation(cdp: CDPClient): Promise<void> {
   }
 }
 
-// Event-driven settle window. QUIET_MS is how long the page must be free of
+// Event-driven settle window. quietMs is how long the page must be free of
 // in-flight requests AND DOM mutation before we call it done — a few frames, not
-// the old fixed 2s. QUIESCE_CAP backstops pathological never-idle pages.
-const QUIET_MS = Number(process.env.VEIL_QUIET_MS) || 40;
-const QUIESCE_CAP = Number(process.env.VEIL_QUIESCE_CAP_MS) || 12_000;
+// the old fixed 2s. quiesceCap backstops pathological never-idle pages.
+//
+// Read per call, NOT bound at module load: a host that loads its .env after
+// importing @veil/core would otherwise silently get the defaults, and tests
+// could not exercise the settle without spawning a subprocess.
+const quietMsDefault = (): number => Number(process.env.VEIL_QUIET_MS) || 40;
+const quiesceCapDefault = (): number => Number(process.env.VEIL_QUIESCE_CAP_MS) || 12_000;
+/**
+ * A request in flight longer than this is treated as a persistent connection
+ * (long-poll / SSE-over-XHR / keepalive), not something the page is waiting on,
+ * and stops blocking settle. Real sites hold such connections open forever —
+ * google's autocomplete XHR never closes — and requiring zero in-flight
+ * requests made settle unreachable there, turning it into a flat cap-length
+ * timeout on every single action. See DECISIONS 2026-07-15.
+ */
+const longLivedMsDefault = (): number => Number(process.env.VEIL_LONGPOLL_MS) || 2_000;
 
 /**
  * Wait until the page is genuinely done reacting — event-driven, not timed.
@@ -271,34 +284,72 @@ const QUIESCE_CAP = Number(process.env.VEIL_QUIESCE_CAP_MS) || 12_000;
  */
 export async function awaitQuiescence(
   cdp: CDPClient,
-  opts: { quietMs?: number; capMs?: number } = {},
+  opts: { quietMs?: number; capMs?: number; longLivedMs?: number } = {},
 ): Promise<void> {
-  const quietMs = opts.quietMs ?? QUIET_MS;
-  const capMs = opts.capMs ?? QUIESCE_CAP;
+  const quietMs = opts.quietMs ?? quietMsDefault();
+  const capMs = opts.capMs ?? quiesceCapDefault();
+  const longLivedMs = opts.longLivedMs ?? longLivedMsDefault();
   try {
     const res = (await cdp.send("Runtime.evaluate", {
       expression:
         `(window.__veil && window.__veil.whenQuiet) ` +
-        `? window.__veil.whenQuiet({quietMs:${quietMs},capMs:${capMs}}) : null`,
+        `? window.__veil.whenQuiet({quietMs:${quietMs},capMs:${capMs},longLivedMs:${longLivedMs}}) : null`,
       awaitPromise: true,
       returnByValue: true,
-    })) as { result?: { value?: unknown } };
-    if (res.result && res.result.value != null) return; // page reported quiet
+    })) as { result?: { value?: { reason?: string; pending?: number; young?: number } | null } };
+    const verdict = res.result?.value;
+    if (verdict != null) {
+      // Hitting the cap used to be indistinguishable from genuine quiet — the
+      // verdict was discarded, which is why a 12s-per-action stall stayed
+      // invisible for so long. Say so.
+      if (verdict.reason === "cap") {
+        debugLog(
+          `quiescence: hit ${capMs}ms cap — ${verdict.young ?? 0} young / ${verdict.pending ?? 0} total request(s) in flight. ` +
+            `Settling anyway; a stuck request may be pinning this page.`,
+        );
+      }
+      return;
+    }
     // value == null → __veil absent (injection blocked); use the host fallback.
   } catch (err) {
     debugLog("quiescence: page-side failed, host fallback", err);
   }
-  await hostQuiescence(cdp, quietMs, capMs);
+  await hostQuiescence(cdp, quietMs, capMs, longLivedMs);
 }
 
-function hostQuiescence(cdp: CDPClient, quietMs: number, capMs: number): Promise<void> {
+function hostQuiescence(
+  cdp: CDPClient,
+  quietMs: number,
+  capMs: number,
+  longLivedMs: number,
+): Promise<void> {
   return new Promise<void>((resolve) => {
-    let inflight = 0;
+    // Keyed by requestId -> startedAt, mirroring the page-side tracker: a bare
+    // counter can't tell a pending request from a never-closing long-poll.
+    const inflight = new Map<string, number>();
     let lastActivity = Date.now();
     let done = false;
     const bump = () => (lastActivity = Date.now());
-    const onReq = () => { inflight++; bump(); };
-    const onDone = () => { inflight = Math.max(0, inflight - 1); bump(); };
+    const onReq = (p: unknown) => {
+      const id = (p as { requestId?: string })?.requestId;
+      // Real CDP always sends a requestId. Without one we cannot pair start to
+      // finish, so the request can't be tracked — say so rather than silently
+      // letting settle return early.
+      if (id) inflight.set(id, Date.now());
+      else debugLog("quiescence(host): requestWillBeSent without requestId — not tracked");
+      bump();
+    };
+    const onDone = (p: unknown) => {
+      const id = (p as { requestId?: string })?.requestId;
+      if (id) inflight.delete(id);
+      bump();
+    };
+    const youngPending = (): number => {
+      const now = Date.now();
+      let n = 0;
+      for (const startedAt of inflight.values()) if (now - startedAt < longLivedMs) n++;
+      return n;
+    };
     const finish = () => {
       if (done) return;
       done = true;
@@ -319,9 +370,14 @@ function hostQuiescence(cdp: CDPClient, quietMs: number, capMs: number): Promise
     cdp.on("DOM.childNodeRemoved", bump);
     cdp.on("DOM.attributeModified", bump);
     const poll = setInterval(() => {
-      if (inflight <= 0 && Date.now() - lastActivity >= quietMs) finish();
+      if (youngPending() === 0 && Date.now() - lastActivity >= quietMs) finish();
     }, 12);
-    const cap = setTimeout(finish, capMs);
+    const cap = setTimeout(() => {
+      debugLog(
+        `quiescence(host): hit ${capMs}ms cap — ${youngPending()} young / ${inflight.size} total in flight`,
+      );
+      finish();
+    }, capMs);
   });
 }
 
