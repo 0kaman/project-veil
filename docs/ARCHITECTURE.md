@@ -1,173 +1,225 @@
-# Veil — Architecture (as-built)
+# Veil — Architecture
 
-> This doc describes what the code **actually does today**, not aspirations. When
-> a decision changes the design, update this file and add a dated row to
-> [DECISIONS.md](./DECISIONS.md). Drift between doc and code is a bug.
+> **STATUS: NOTHING HERE IS BUILT.** This is the design for the reboot, agreed
+> 2026-07-15. v1's source was deleted on the `veil-reboot` branch and is preserved
+> in git at `9e9f3e0`.
 >
-> Last reconciled: 2026-07-12.
+> The old rule still stands and applies the moment code exists: this file
+> describes what the code **actually does**, not what we hope. Drift between doc
+> and code is a bug. Until then, every line below is a promise, not a report.
+> Every number is measured — from v1, or from probes run while designing this.
 
 ## What Veil is
 
-Veil is an **AI-first browser**: it decomposes any webpage into a **Behavior
-Graph** — a compact, structured description of what a page *does* (its
-interactive elements, the event handlers on them, the API calls those trigger,
-and the semantic purpose of each), instead of the thousands of DOM nodes a page
-*is*.
+An **AI-first browser**. Not a browser with an AI bolted on — a machine that
+perceives the web *for* an agent, with no human looking and no pixels rendered.
 
-The product is really a **perception format for agents**. A raw DOM is 3,000–
-10,000 nodes of mostly-visual noise; a Behavior Graph is 50–300 nodes an LLM can
-actually reason over:
+That distinction is the whole product. Dia, Comet, Atlas and Edge are Chromium
+forks with an LLM beside the viewport: a human is still the user, the AI is a
+passenger, and **every page must render because someone is watching**. They are
+AI-*assisted*. Veil has no viewport, so it can decline to boot a browser at all —
+a move they are structurally incapable of making.
+
+## The one idea
+
+**A browser is a fallback, not a foundation.**
+
+Booting Chrome costs **969 MB, 8 processes and 2,116ms** before a single byte is
+read, and caps concurrency at ~10 sessions. You need it for exactly one thing:
+**when the bytes you want don't exist until JavaScript runs, or when the server
+won't talk to anything that isn't a browser.** Everything else — fetching,
+parsing, extracting — is cheaper without it, by a factor of ~32.
+
+So every task starts as HTTP. The engine is summoned, never assumed.
+
+## The ladder
+
+Each rung is tried before the one below it. Costs are measured, not estimated.
+
+| rung | how | cost | when |
+|---|---|---|---|
+| **SEARCH** | Brave API | ~200ms · ~900 tok | always first |
+| **READ** | fetch → parse → extract | ~630ms · ~3k tok/page | a snippet isn't enough |
+| **ACT** | Chrome + CDP + AX tree | ~2–4s · 969MB | you must click, type, or learn behaviour |
+| **REPLAY** | captured request template | ~1–2ms | you've acted here once before |
+
+Search snippets are 40–68 words each; ten results is ~583 tokens of real prose
+and **often answers the question outright**. v1's research session took 104.3s
+and 43,736 tokens to answer worse.
+
+## The three surfaces
+
+### 1. `@veil/search` — Brave
+
+Links + snippets. **Not content.** Brave's raw JSON is 26KB (~6,709 tokens) for
+10 results; the useful projection (title, url, description, age) is ~900. Ship
+the projection.
+
+Free tier is **1 query/second, 2,000/month**. Searches cannot be parallelised —
+cache aggressively; the same query is stable for hours. `extra_snippets` is a
+paid feature and is **silently ignored** on free (HTTP 200, zero returned).
+
+### 2. `@veil/read` — fetch + extract, no browser
 
 ```
-PAGE https://github.com/login "Sign in to GitHub"
-NODES
-  form-5 [form]  on:submit → form_submit (POST /session)  semantic: auth:login (0.85)
-    textbox-username [textbox] "Username or email address"  semantic: auth:identifier-input (0.70)
-    textbox-password [textbox] "Password"                   semantic: auth:password-input (0.90)
-    button-sign-in  [button]  "Sign in"                     semantic: form:submit (0.75)
+fetch 490ms → parse5 48ms → readability 89ms  = 627ms   (en.wikipedia.org/wiki/HTTP)
 ```
 
-## Packages
+Returns the actual prose. 7,867 words, ~10k tokens, 91% of the HTML discarded as
+nav/ads/boilerplate. The same page through the engine took **20,871ms** and
+returned 800 nodes with **zero paragraphs**.
 
-A pnpm + turbo monorepo. Three packages:
+**Escalates to the engine on two triggers, never on a guess:**
+1. **JS shell** — the content isn't in the HTML
+2. **Doorman** — the server refuses non-browsers (Cloudflare, CAPTCHA)
 
-| package | role |
+The test *is* the fetch. Word count separates cleanly: real articles are 2,253
+and 7,867 words; a JS stub is 0, an app is 10, a marketing page is 97–485.
+(Discard ratio does **not** separate — a real article discards 98%, a marketing
+page 94.9%. It measures boilerplate, not success.)
+
+**Budget: 4,000 words**, env-tunable. Chosen so typical pages arrive whole and
+only long-form is cut. Beyond it, return an outline and a handle:
+
+```
+via: fetch · 627ms · 7,867 words · returned 4,000 · handle r1
+title:   HTTP
+outline: Overview · History · Message format · Status codes · Encryption
+more:    veil_read("r1", query: "status codes")
+```
+
+The outline costs ~80 tokens and tells the model exactly what it's missing.
+
+### 3. `@veil/core` — the engine
+
+Unchanged in spirit; it is the good part. Raw CDP over WebSocket. The
+accessibility tree as skeleton. **buildGraph is 211ms** — it was never the slow
+part. `github.com/login` → 30 nodes, 1,013 tokens, with `POST /session` attached.
+
+The graph stays **pure behaviour**. Prose comes only from `veil_read`. One
+artifact, one job.
+
+Stages 2 and 3 are the moat and nobody else has them:
+- **Stage 2** — `DOMDebugger.getEventListeners` **returns `[]`** on GitHub's Sign
+  in button. React delegates to the root; the markup tells you nothing. The Fiber
+  walk and `enrichStructuralEvents` are what climb that wall.
+- **Stage 3** — network correlation via async initiator stacks. This is what
+  observed `/_next/data/…` (Next.js), PostHog's `/e/`, prebid's `auctionEnd` —
+  runtime truth no document discloses.
+
+## The tool surface
+
+**Six verbs. The surface is the router** — no classifier, no intent model. The
+LLM picks, which is the one thing LLMs are reliably good at.
+
+```
+veil_search(query)                 Brave → projected results     ~200ms
+veil_read(url|handle, query?)      text, fetch-first             ~630ms
+veil_open(url)                     engine session + summary       ~2–4s
+veil_query(session, filter)        pull nodes from the cache      ~0
+veil_do(session, node, action)     interact — and teach replay   ~150ms
+veil_replay(session, node, edits)  fire the captured request     ~1–2ms
+```
+
+Descriptions are signposts, not documentation. `veil_read` says *"use this
+first"*; `veil_open` says *"boots a browser — only when you need to act"*.
+
+v1 shipped 8 tools and the model **never once** called `veil_query` — because
+`veil_open` had already handed it everything. Fix the payload and the verb earns
+its slot.
+
+## The receipt — no silent degradation
+
+**Every response declares what it did and what it doesn't have.**
+
+```
+via: fetch  · 627ms · 7,867 words · returned 4,000 · handle r1
+via: engine · 4,120ms · js-shell · 800 of 1,828 nodes · 1,028 trimmed
+via: fetch  · 272ms · 0 words · NO ARTICLE — likely JS-gated, try veil_open
+via: —      · BLOCKED both ways · fetch got a CAPTCHA, engine was fingerprinted
+```
+
+This is the most important rule in the document, because **every failure in v1
+was silence, not slowness**:
+
+| the component knew | what it said |
 |---|---|
-| `@veil/core` | The engine: browser runtime (raw CDP), the 5-stage pipeline, the graph model + serializers. Zero runtime dependencies. |
-| `@veil/mcp` | **The prime interface.** An MCP server exposing the engine to any MCP client (Claude Code, Claude Desktop, agent runtimes) over stdio. |
-| `@veil/cli` | A developer/debug interface over the same engine: a background daemon holds Chrome alive; a thin client drives it. Demoted from prime to dev-tool when MCP landed. |
+| settle hit the cap, `pending:1` | nothing — `awaitQuiescence` discarded the verdict |
+| prune trimmed 1,028 nodes | nothing — `nodesTrimmed` never reached the text |
+| Stage 1 dropped every paragraph | nothing |
+| the graph held no tech-stack evidence | *"per job postings"* |
 
-Both `@veil/mcp` and `@veil/cli` are thin skins over the identical `Veil` /
-`VeilPage` core — neither forks behavior.
+A tool that fails is fine. A tool that fails quietly makes the model lie.
 
-## The core engine (`@veil/core`)
+## Handle, not payload
 
-### Browser runtime — raw CDP
+The model's context is the scarce resource — v1's final call was **58,201 tokens
+and took 73.8 seconds**. Everything returns a reference and a summary; the data
+stays host-side and is pulled on demand.
 
-Veil speaks **Chrome DevTools Protocol directly over a WebSocket** (no Playwright/
-Puppeteer). The pipeline makes thousands of accessibility and event-listener
-queries per page; a Node relay per call would be prohibitive, and CDP's
-event-driven subscriptions (mutations, network) are what the instrumentation
-layer needs.
+It applies on **all three surfaces**, which is how you know it's the real
+principle:
 
-- `browser/launcher.ts` — spawns headless Chrome with a unique temp `--user-data-
-  dir`; auto-detects the binary (`CHROME_PATH`, macOS default, or `google-chrome`).
-  Reaps the process + temp dir on **every** failure path, not just success.
-- `browser/cdp-client.ts` — a hardened WebSocket JSON-RPC client. The message
-  handler never throws to the event loop (a malformed frame is dropped, not
-  fatal); sends after close fail fast; event handlers are isolated.
-- `browser/page.ts` — a per-tab CDP session (`PageHandle`). Each `Veil.open()`
-  creates its **own** tab (`freshTarget`) so concurrent sessions can't hijack one
-  another's page; `close()` closes the tab, not just the socket.
-  Also **`awaitQuiescence`** — the event-driven settle every navigation and
-  interaction waits on. It asks the injected `window.__veil.whenQuiet()` (page-
-  side; a host-side fallback covers strict-CSP pages where injection is blocked)
-  to report when the page has stopped reacting: DOM quiet **and** no *young*
-  in-flight request, for `VEIL_QUIET_MS` (40). **Only young requests count.** A
-  request in flight past `VEIL_LONGPOLL_MS` (2s) is a persistent connection —
-  long-poll, SSE-over-XHR, keepalive — that will never close, and real sites
-  hold them open forever (google's autocomplete XHR does). Requiring *zero*
-  in-flight requests made settle unreachable there, silently degrading it into a
-  flat `VEIL_QUIESCE_CAP_MS` (12s) timeout **per action**. Late data still lands
-  via the mutation-watcher's incremental update, so settling early loses nothing.
-  See DECISIONS 2026-07-15.
-- `browser/network-capture.ts` — captures XHR/Fetch/Document requests with full
-  async initiator stacks (`Debugger.setAsyncCallStackDepth`). Response bodies are
-  fetched and **awaited** (`settle()`) before shape inference.
-- `browser/mutation-watcher.ts` — debounced DOM-mutation + SPA-nav + poll signals
-  that drive incremental graph updates on long-lived sessions.
-- `browser/interactions.ts` — dispatches agent actions. Clicks/types scroll the
-  target into view first; `clear`/`type` are contenteditable-aware; `type` clears
-  before inserting.
+| surface | payload | handle |
+|---|---|---|
+| search | 6,709 tok (raw Brave JSON) | ~900 tok |
+| read | 10k tok (whole article) | 4k + outline |
+| open | 18k tok (whole graph) | ~200 tok + summary |
 
-### The 5-stage pipeline (`pipeline/`)
+v1 shipped 43,736 tokens across 7 pages and used **zero** of them.
 
-Raw CDP signals → Behavior Graph, in five stages. Data flows in `VeilPage.buildGraph()`:
+## The two flywheels
 
-1. **Stage 1 — AXTree skeleton** (`stage-1-axtree.ts`): the accessibility tree →
-   `BehaviorNode`s. Keeps interactive roles, semantic containers, table/list body
-   roles, and named content landmarks; collapses generic wrapper chains.
-   `enrichStructuralEvents` lifts `href`/`action` on server-rendered link/form
-   nodes into synthetic click/submit events (skipping in-page `#` anchors and
-   `javascript:` links). Supports incremental patching.
-2. **Stage 2 — Event binding** (`stage-2-events.ts`): for each interactive node,
-   `DOMDebugger.getEventListeners` + a React Fiber walk (React 16 & 17+) to find
-   component `onClick`/`onChange` props; each handler categorized (api_call /
-   navigation / dom_mutation / form_submit / unknown) from its source. Runs in
-   **parallel batches of 20**.
-3. **Stage 3 — Network correlation** (`stage-3-network.ts` + `api-endpoints.ts`):
-   maps captured requests to the node that triggered them via initiator-stack
-   frames (with a col=0-collision-aware ranked match), and extracts parameterized
-   `ApiEndpoint`s (numeric/uuid/date/hash/locale segments collapse to `{id}`).
-4. **Stage 4 — Component grouping** (`stage-4-components.ts`): React Fiber-tree
-   grouping, or vanilla heuristic grouping (containers + shared handlers). Group
-   ids are dedup-suffixed and content-derived for stability.
-5. **Stage 5 — Semantic inference** (`stage-5-semantics.ts` + `enricher.ts`):
-   heuristic rules label the obvious (auth, search, navigation, commerce, …);
-   then an **optional pluggable LLM enricher** labels the ambiguous ones (see
-   below). Heuristics alone are a complete offline Stage 5.
+Both say the same thing: **pay the browser once, then never again for that site.**
 
-### The graph model (`graph/`)
+```
+veil_auth ──► one shared cookie jar ──► every later fetch is authenticated & cheap
+veil_do   ──► request template      ──► every later call is replay: 1–2ms (121×)
+```
 
-- `model.ts` — `BehaviorGraph`, `BehaviorNode`, `EventBinding`, `NetworkEdge`,
-  `ApiEndpoint`, `ComponentGroup`, `SemanticLabel`.
-- `display-ids.ts` — content-derived **stable** display ids, so the same page
-  yields the same ids across sessions (Chrome reassigns internal AX ids each run).
-- `serializer.ts` — the compact-text (LLM-facing) and JSON-Graph-Format
-  serializers. Names/values are escaped so newlines/quotes/commas can't corrupt
-  the format.
-- `differ.ts` / `query.ts` — incremental-update diffing and node querying.
+One jar, shared by fetch and engine. Log in once with the browser; the cheap path
+inherits the session. Click once with the browser; replay owns the endpoint. The
+engine stops being infrastructure and becomes an **apprenticeship**.
 
-### The pluggable enricher (`pipeline/enricher.ts`)
+## Politeness
 
-Stage 5's heuristics can't read *intent* from an ambiguous "Apply" / "Continue" /
-icon-only button. The `SemanticEnricher` interface takes those low-confidence
-nodes and returns labels; results land as `source: 'llm'`.
+```
+global concurrent fetches   10     per-host   2  (+~300ms spacing)
+timeout                     10s    retry      1× on 429/503, then report
+User-Agent                  real Chrome, matching the real build
+```
 
-The default `OpenAICompatEnricher` speaks the OpenAI chat-completions protocol —
-**the same socket a local model or Walter's brain exposes**. Enable it with
-`VEIL_ENRICH_BASE_URL` (+ `VEIL_ENRICH_MODEL`, `VEIL_ENRICH_API_KEY`), or inject
-any implementation via `new Veil({ enricher })`. It is best-effort: any failure
-returns `[]` and never blocks a build; it never lowers a more-confident heuristic.
+Ten results are usually ten domains, so per-host rarely binds — it's the brake
+for when a task hammers one site.
 
-## The MCP server (`@veil/mcp`) — the prime interface
+**The tension, named:** politeness says identify as a bot; access says look like
+Chrome. You cannot do both. Veil fetches pages a user explicitly asked for —
+browser-equivalent, not crawling — so it sends a real Chrome UA and behaves well
+(limits, backoff, honours 429). Strict `robots.txt` belongs to the crawler.
 
-`packages/mcp/src/server.ts` runs an MCP server over stdio. `tools.ts` registers
-seven tools on a shared, hardened in-process `SessionStore` (one Chrome, a tab per
-session, idle-TTL reaping):
+## Known gaps
 
-| tool | does |
-|---|---|
-| `veil_open` | open a URL in a fresh tab → session id + behavior graph |
-| `veil_graph` | current graph (compact text or JSON Graph Format) |
-| `veil_do` | act on a node (click/type/clear/select/focus/hover) → updated graph |
-| `veil_query` | find nodes by role/name/event/semantic |
-| `veil_auth` | human-in-the-loop login; carry cookies into the headless session |
-| `veil_sessions` / `veil_close` | list / close sessions |
+- **The doorman beats headless too.** Cloudflare fingerprints headless Chrome.
+  When both rungs fail, Veil says so and stops. Stealth is not a workstream until
+  it has to be — and note v1's disguise was actively broken: the UA claimed
+  Chrome 131 on a 150 binary, and `--disable-gpu` removed WebGL entirely, which
+  no real Mac Chrome does.
+- **The settle cap still fires on the DOM half.** The network half is fixed
+  (long-lived connections no longer pin it). `domQuiet` remains unreachable on
+  animated pages — 12s per action on marketing sites. "Wait for quiet" is the
+  wrong model, not a wrong constant.
+- **Cross-origin iframes (OOPIF)** are not captured.
+- **The crawler is parked** — see DECISIONS.
 
-Tool errors are returned as clean MCP error results (an agent reads the text and
-recovers), never protocol failures.
+## Package layout
 
-See [RUNBOOK.md](./RUNBOOK.md) for setup and commands.
+```
+@veil/core        the engine. CDP + AX + the 5 stages. ZERO runtime deps.
+@veil/read        fetch + parse5 + readability.        deps live HERE, not in core.
+@veil/search      Brave client.                        thin.
+@veil/mcp         the six verbs. the prime interface.
+@veil/playground  Ink REPL + episodic trace. how you find out it's lying.
+```
 
-## Testing — two layers (Walter pattern)
-
-- **Layer 1 (hermetic, default `pnpm test`)**: drives an in-process `FakeCDPClient`
-  — pure pipeline/model logic, deterministic, no Chrome. Plus the MCP tool surface
-  over an in-memory transport with a fake Veil.
-- **Layer 2 (`pnpm test:integration`)**: launches **real headless Chrome** against
-  locally-served fixtures (server-rendered form, pushState SPA, below-the-fold
-  button). Catches wire-level, interaction, and timing regressions the fake can't.
-  Auto-skips when Chrome is absent.
-
-Every package has a `tsc --noEmit` typecheck gate wired into turbo.
-
-## Known limitations / scoped future work
-
-- **Cross-origin iframes (OOPIF) are not captured.** Out-of-process frames (ads,
-  OAuth popups, embedded checkout) need `Target.setAutoAttach` + per-frame session
-  merge + cross-frame id namespacing. Designed, not yet built — see DECISIONS.
-- **Anti-bot stealth is shallow** (masks `navigator.webdriver`/plugins only);
-  `--headless=new` is fingerprintable. Defeats naive checks, not sophisticated ones.
-- **Semantic heuristics are English-only.** The enricher hook is the multilingual
-  path.
+The zero-dep rule survives by **not applying** to `@veil/read` rather than by
+being broken. Core stays small and auditable — it's the part holding your cookies.
