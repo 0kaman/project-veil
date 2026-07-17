@@ -197,6 +197,57 @@ Chrome. You cannot do both. Veil fetches pages a user explicitly asked for —
 browser-equivalent, not crawling — so it sends a real Chrome UA and behaves well
 (limits, backoff, honours 429). Strict `robots.txt` belongs to the crawler.
 
+## Testing & the playground — two different jobs
+
+They get conflated. They pull opposite ways, and both are load-bearing.
+
+| | **playground** | **tests** |
+|---|---|---|
+| driver | you + an LLM, live | CI, nobody watching |
+| finds | unknown-unknowns | known regressions |
+| output | "huh, that's wrong" | pass / fail |
+| cadence | exploration | every commit |
+
+### The playground — `@veil/playground`
+
+The receipt principle made **executable**: it is how a human watches the system
+declare what it dropped. In v1 its episodic log is what caught the 12s cap that
+hid for months — it is not garnish, it is the enforcement mechanism for the one
+rule the whole design rests on. So it is built **alongside the first tool, not
+after the sixth** — instrument before you change, the hardest-won lesson of v1.
+
+Two modes:
+- **raw** — `veil_read(url)` → see the receipt, no LLM. For checking one result.
+- **goal-driven** — you give a goal, an LLM (Mistral) picks tools over the real
+  MCP server, step-gated, every hop traced. For watching it reason.
+
+It drives the **real** MCP server over stdio, never an in-process shortcut —
+same reason as v1: an in-process path hides the protocol-level bugs the harness
+exists to find.
+
+**The metric that matters most: escalation rate.** The entire architecture bets
+that most tasks stop at search/read and never boot Chrome. The playground
+measures, continuously, what fraction reach the engine. If that number is high,
+**the "browser is a fallback" thesis is falsified** — and we want to know in week
+one, not month six. Every episode also records tokens, per-rung latency, and what
+each rung reported it was missing.
+
+### The tests — the base is wide this time
+
+v2 is far more testable than v1, because most of it doesn't need Chrome:
+
+- **Layer 1 — hermetic, no Chrome.** The read path is a pure function,
+  `HTML → extract`: capture real pages as fixtures once, assert extraction (and
+  its **receipt** — word count, escalation trigger) against them. Golden files.
+  Search is mocked (it must be — 66 real queries/day). This layer is the bulk.
+- **Layer 2 — real Chrome, thin.** Only the engine path: `veil_open/do/replay`
+  against local fixtures, plus the two escalation triggers (a JS-shell fixture,
+  a doorman fixture). Auto-skips without Chrome.
+
+Assert on the **receipt**, not just the payload — `{via, words, dropped}` — so a
+test fails when the system stops telling the truth, not only when the data
+changes.
+
 ## Known gaps
 
 - **The doorman beats headless too.** Cloudflare fingerprints headless Chrome.
