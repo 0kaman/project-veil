@@ -69,9 +69,25 @@ Returns the actual prose. 7,867 words, ~10k tokens, 91% of the HTML discarded as
 nav/ads/boilerplate. The same page through the engine took **20,871ms** and
 returned 800 nodes with **zero paragraphs**.
 
+**Fallback extractor — Readability alone loses 10%.** Measured on 60 real pages:
+Readability returned near-zero words on pages whose HTML *did* contain the text
+(geeksforgeeks: 1,334 raw words → 0 kept). So: if Readability's output is thin
+but the raw stripped text is high (≥~600 words), fall back to a denser extraction
+rather than declaring failure. The receipt must separate "no content here" from
+"extraction failed on content that's present" — the no-silent-degradation rule,
+turned on our own extractor. Fixing this moves read-wins 57% → ~67%.
+
 **Escalates to the engine on two triggers, never on a guess:**
 1. **JS shell** — the content isn't in the HTML
 2. **Doorman** — the server refuses non-browsers (Cloudflare, CAPTCHA)
+
+**Candidate middle rung (unproven): a Chrome-*fingerprinted* fetch.** The doorman
+17% is TLS-fingerprint-gated — curl and node-fetch both get 403 identically — and
+headless Chrome's JA3 is identical to real Chrome's. So the gate is the
+*fingerprint*, not the *engine*. A fetch carrying a real Chrome TLS/HTTP2
+fingerprint might reclaim some doorman cases at ~700ms instead of a 969MB browser.
+**Hypothesis — needs a real test against the observed 403 set before it earns a
+rung.** If it works, doorman splits into reclaimable-cheaply and blocked-both-ways.
 
 The test *is* the fetch. Word count separates cleanly: real articles are 2,253
 and 7,867 words; a JS stub is 0, an app is 10, a marketing page is 97–485.
@@ -225,12 +241,14 @@ It drives the **real** MCP server over stdio, never an in-process shortcut —
 same reason as v1: an in-process path hides the protocol-level bugs the harness
 exists to find.
 
-**The metric that matters most: escalation rate.** The entire architecture bets
-that most tasks stop at search/read and never boot Chrome. The playground
-measures, continuously, what fraction reach the engine. If that number is high,
-**the "browser is a fallback" thesis is falsified** — and we want to know in week
-one, not month six. Every episode also records tokens, per-rung latency, and what
-each rung reported it was missing.
+**The metric that matters most: escalation rate — split by query class.** The
+architecture bets most tasks stop at search/read and never boot Chrome. The
+playground measures, continuously, what fraction reach the engine. The 2026-07-19
+probe proved the **aggregate lies**: 30% escalation overall, but research 25% vs
+commercial 60%. Reporting one number would have hidden the finding that the thesis
+holds strongly for Veil's actual use case (research) and weakly for commerce. So
+the metric is always reported per query class. Every episode also records tokens,
+per-rung latency, and what each rung reported it was missing.
 
 ### The tests — the base is wide this time
 
