@@ -1,0 +1,25 @@
+{
+  "name": "@veil/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "veil-mcp": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsup src/server.ts --format esm --sourcemap",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@veil/read": "workspace:*",
+    "@veil/search": "workspace:*",
+    "zod": "^3.23.8"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

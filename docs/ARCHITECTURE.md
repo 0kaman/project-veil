@@ -3,9 +3,10 @@
 > **STATUS: building.** Design agreed 2026-07-15; v1's source was deleted on the
 > `veil-reboot` branch and is preserved in git at `9e9f3e0`.
 >
-> **Built so far:** `@veil/read` (2026-07-20) — fetch + extract + receipt +
-> handle, 16 tests. `@veil/search` (2026-07-21) — Brave + projection + cache +
-> rate gate, 12 tests, zero deps. Both verified live. The rest is still a promise.
+> **Built so far:** `@veil/read` (16 tests), `@veil/search` (12 tests, zero deps),
+> `@veil/mcp` (2026-07-21) — the two verbs over stdio, 6 tests over the real
+> in-memory transport, `search → read → pull` verified live. Still a promise:
+> the engine (`@veil/core`) and the playground.
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
