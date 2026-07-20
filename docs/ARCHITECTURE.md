@@ -4,7 +4,8 @@
 > `veil-reboot` branch and is preserved in git at `9e9f3e0`.
 >
 > **Built so far:** `@veil/read` (2026-07-20) — fetch + extract + receipt +
-> handle, 16 tests, verified live. Everything else below is still a promise.
+> handle, 16 tests. `@veil/search` (2026-07-21) — Brave + projection + cache +
+> rate gate, 12 tests, zero deps. Both verified live. The rest is still a promise.
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
