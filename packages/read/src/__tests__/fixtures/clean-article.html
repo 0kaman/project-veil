@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><title>Understanding HTTP — A Practical Guide</title></head>
+<body>
+  <nav><a href="/">Home</a> <a href="/topics">Topics</a> <a href="/about">About</a></nav>
+  <header><h1>Understanding HTTP</h1><p class="byline">By A. Writer</p></header>
+  <article>
+    <p>The Hypertext Transfer Protocol is the foundation of data communication on the web. Every time a browser requests a page, it speaks HTTP to a server, and the server answers in the same language. This exchange is deceptively simple and endlessly deep.</p>
+    <h2>Requests and responses</h2>
+    <p>An HTTP request carries a method, a path, headers, and sometimes a body. The method tells the server what the client wants: GET to retrieve, POST to submit, PUT to replace, DELETE to remove. The path names the resource. Headers carry everything else, from the accepted content types to the authentication tokens.</p>
+    <p>A response mirrors that shape. It opens with a status line, a three digit code that summarises the outcome, then its own headers, then the body. A two hundred means success. A four oh four means the resource was not found. A five hundred means the server broke.</p>
+    <h2>Statelessness</h2>
+    <p>HTTP is stateless by design. Each request stands alone, carrying no memory of the requests before it. This makes servers simpler and more scalable, but it means that anything resembling a session must be reconstructed on every request, usually from a cookie the client presents each time.</p>
+    <p>That single constraint shapes an enormous amount of web architecture. Load balancers can route any request to any server precisely because no server holds special knowledge of a client. The cost is paid in cookies, tokens, and the constant re-establishment of who you are.</p>
+    <h2>Encryption</h2>
+    <p>Plain HTTP travels in the clear, readable by anyone on the path. HTTPS wraps it in TLS, negotiating a shared secret before any request is sent. The negotiation itself reveals nothing useful to an eavesdropper, and once complete, every byte is encrypted end to end.</p>
+  </article>
+  <footer><p>Copyright 2026. All rights reserved. Privacy policy. Terms of service.</p></footer>
+  <script>console.log("analytics")</script>
+</body>
+</html>

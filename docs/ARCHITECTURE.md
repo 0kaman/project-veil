@@ -1,13 +1,14 @@
 # Veil — Architecture
 
-> **STATUS: NOTHING HERE IS BUILT.** This is the design for the reboot, agreed
-> 2026-07-15. v1's source was deleted on the `veil-reboot` branch and is preserved
-> in git at `9e9f3e0`.
+> **STATUS: building.** Design agreed 2026-07-15; v1's source was deleted on the
+> `veil-reboot` branch and is preserved in git at `9e9f3e0`.
 >
-> The old rule still stands and applies the moment code exists: this file
-> describes what the code **actually does**, not what we hope. Drift between doc
-> and code is a bug. Until then, every line below is a promise, not a report.
-> Every number is measured — from v1, or from probes run while designing this.
+> **Built so far:** `@veil/read` (2026-07-20) — fetch + extract + receipt +
+> handle, 16 tests, verified live. Everything else below is still a promise.
+>
+> The rule: this file describes what the code **actually does**, not what we
+> hope. Drift between doc and code is a bug. Every number is measured — from v1,
+> from design-time probes, or now from the built code.
 
 ## What Veil is
 
@@ -62,7 +63,7 @@ paid feature and is **silently ignored** on free (HTTP 200, zero returned).
 ### 2. `@veil/read` — fetch + extract, no browser
 
 ```
-fetch 490ms → parse5 48ms → readability 89ms  = 627ms   (en.wikipedia.org/wiki/HTTP)
+fetch 490ms → linkedom 48ms → readability 89ms  = 627ms   (en.wikipedia.org/wiki/HTTP)
 ```
 
 Returns the actual prose. 7,867 words, ~10k tokens, 91% of the HTML discarded as
@@ -284,7 +285,7 @@ changes.
 
 ```
 @veil/core        the engine. CDP + AX + the 5 stages. ZERO runtime deps.
-@veil/read        fetch + parse5 + readability.        deps live HERE, not in core.
+@veil/read        fetch + linkedom + readability.        deps live HERE, not in core.
 @veil/search      Brave client.                        thin.
 @veil/mcp         the six verbs. the prime interface.
 @veil/playground  Ink REPL + episodic trace. how you find out it's lying.
