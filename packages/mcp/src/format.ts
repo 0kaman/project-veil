@@ -34,7 +34,9 @@ export function renderRead(r: ReadResult): string {
 
   const size = c.truncated ? `${c.words} of ${c.totalWords} words` : `${c.words} words`;
   const extractor = c.extractor === "fallback" ? " · fallback extractor" : "";
-  const head = `via: ${c.via} · ${c.ms}ms · ${size}${extractor}${r.handle ? ` · handle ${r.handle}` : ""}`;
+  // Status word present and consistent with search ("· ok ·"), so the receipt is
+  // parseable by the escalation metric and legible to the model.
+  const head = `via: ${c.via} · ${c.ms}ms · ok · ${size}${extractor}${r.handle ? ` · handle ${r.handle}` : ""}`;
 
   const parts = [head];
   if (r.title) parts.push(`title: ${r.title}`);

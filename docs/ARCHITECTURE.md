@@ -7,8 +7,8 @@
 > deps), `@veil/mcp` (6 tests, real transport), `@veil/playground` (2026-07-21) —
 > Mistral drives the real stdio server, Claude-Code-style. End to end, live: a
 > research task ran search → read → grounded answer in **5.7s / 7,554 tokens**,
-> vs v1's 104s / 43,736 tokens on the same shape of task. Still a promise: the
-> engine (`@veil/core`) and the playground's episodic escalation metric.
+> vs v1's 104s / 43,736 tokens on the same shape of task. The escalation metric
+> (`pnpm play:analyse`) is built too. Still a promise: the engine (`@veil/core`).
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,

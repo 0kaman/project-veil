@@ -11,6 +11,7 @@ import { Box, Static, Text, useApp, useInput, useStdin } from "ink";
 import TextInput from "ink-text-input";
 import type { Config } from "../config.js";
 import { Tracer } from "../trace.js";
+import { EpisodeRecorder } from "../episode.js";
 import { VeilMcp } from "../mcp.js";
 import { Mistral } from "../mistral.js";
 import { AgentSession, type GateDecision } from "../agent.js";
@@ -47,6 +48,14 @@ export function App({ config, autoExit }: { config: Config; autoExit?: boolean }
   const tracerRef = useRef<Tracer | null>(null);
   if (!tracerRef.current) tracerRef.current = new Tracer(config.traceDir);
   const tracer = tracerRef.current;
+
+  // Distills this session into traces/episodes.jsonl — another subscriber, so
+  // the escalation metric can never disagree with the trace. See `pnpm play:analyse`.
+  const recorderRef = useRef<EpisodeRecorder | null>(null);
+  if (!recorderRef.current) {
+    recorderRef.current = new EpisodeRecorder(config.traceDir);
+    recorderRef.current.attach(tracer);
+  }
 
   const sessionRef = useRef<AgentSession | null>(null);
   const mcpRef = useRef<VeilMcp | null>(null);
