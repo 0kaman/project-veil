@@ -3,10 +3,12 @@
 > **STATUS: building.** Design agreed 2026-07-15; v1's source was deleted on the
 > `veil-reboot` branch and is preserved in git at `9e9f3e0`.
 >
-> **Built so far:** `@veil/read` (16 tests), `@veil/search` (12 tests, zero deps),
-> `@veil/mcp` (2026-07-21) — the two verbs over stdio, 6 tests over the real
-> in-memory transport, `search → read → pull` verified live. Still a promise:
-> the engine (`@veil/core`) and the playground.
+> **Slice 1 is built.** `@veil/read` (16 tests), `@veil/search` (12 tests, zero
+> deps), `@veil/mcp` (6 tests, real transport), `@veil/playground` (2026-07-21) —
+> Mistral drives the real stdio server, Claude-Code-style. End to end, live: a
+> research task ran search → read → grounded answer in **5.7s / 7,554 tokens**,
+> vs v1's 104s / 43,736 tokens on the same shape of task. Still a promise: the
+> engine (`@veil/core`) and the playground's episodic escalation metric.
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
