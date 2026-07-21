@@ -10,6 +10,29 @@ import type { ToolSchema } from "./mcp.js";
 
 const ENDPOINT = "https://api.mistral.ai/v1/chat/completions";
 
+/**
+ * A content delta is usually a string — but when the model cites its sources,
+ * Mistral streams content-chunk arrays with reference OBJECTS mixed in. Doing
+ * `content += obj` yields the literal "[object Object]" in the answer (observed
+ * on a protest-news query, 8 times). So: pass strings through, pull text out of
+ * chunk arrays, and drop reference/citation objects — they aren't display text.
+ */
+export function deltaText(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((c) => {
+        if (typeof c === "string") return c;
+        if (c && typeof c === "object" && (c as { type?: string }).type === "text") {
+          return String((c as { text?: unknown }).text ?? "");
+        }
+        return ""; // reference / image_url / other non-text chunk
+      })
+      .join("");
+  }
+  return ""; // a bare reference object
+}
+
 export interface AssistantToolCall {
   id: string;
   type: "function";
@@ -88,7 +111,9 @@ export class Mistral {
         const payload = line.slice(5).trim();
         if (payload === "[DONE]") continue;
         let evt: {
-          choices?: { delta?: { content?: string | null; tool_calls?: unknown[] }; finish_reason?: string | null }[];
+          // content is typed unknown on purpose: usually a string, but the API
+          // also sends content-chunk arrays and reference objects. See deltaText.
+          choices?: { delta?: { content?: unknown; tool_calls?: unknown[] }; finish_reason?: string | null }[];
           usage?: { prompt_tokens?: number; completion_tokens?: number };
         };
         try {
@@ -103,7 +128,7 @@ export class Mistral {
         const choice = evt.choices?.[0];
         if (!choice) continue;
         if (choice.finish_reason) finishReason = choice.finish_reason;
-        const t = choice.delta?.content;
+        const t = deltaText(choice.delta?.content);
         if (t) {
           content += t;
           onTextDelta?.(t);
