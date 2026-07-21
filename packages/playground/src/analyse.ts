@@ -67,41 +67,48 @@ function main(): void {
   const searches = eps.reduce((a, e) => a + e.searches, 0);
   const prompt = eps.reduce((a, e) => a + e.promptTokens, 0);
   const completion = eps.reduce((a, e) => a + e.completionTokens, 0);
-  const escalated = reads.doorman + reads.jsShell;
 
   console.log(`\n${B("VEIL ESCALATION ANALYSIS")}  ${DIM(file)}`);
   console.log(`${eps.length} sessions · ${searches} searches · ${reads.total} reads\n`);
 
-  // ── The metric ───────────────────────────────────────────────────────────
-  console.log(B("Read outcomes") + DIM("  — did the cheap path suffice?"));
+  // ── The thesis metric: TASK-level, not read-level ────────────────────────
+  // The thesis is about whether TASKS need a browser, not whether individual
+  // reads fail. A doorman the agent reads PAST is not an escalation — the task
+  // still succeeds on the cheap path. So a task escalated only if it got NO
+  // successful read at all. (Discovered by reading the trace: tasks that hit
+  // doormen still answered from the next result — read-level 50%, task-level 0%.)
+  const tasksWithReads = eps.filter((e) => e.reads.total > 0);
+  const escalatedTasks = tasksWithReads.filter((e) => e.reads.ok === 0);
+  const taskEsc = pct(escalatedTasks.length, tasksWithReads.length);
+
+  const MIN_TASKS = 10;
+  let verdict: string;
+  if (tasksWithReads.length < MIN_TASKS) {
+    verdict = DIM(`${taskEsc}% so far, but only ${tasksWithReads.length} tasks — provisional; need ≥${MIN_TASKS}.`);
+  } else if (taskEsc < 20) {
+    verdict = GRN(`✓ ${taskEsc}% of tasks needed the engine — it's a genuine fallback. Thesis holds.`);
+  } else if (taskEsc < 40) {
+    verdict = YEL(`~ ${taskEsc}% of tasks needed the engine — watch this.`);
+  } else {
+    verdict = RED(`✗ ${taskEsc}% of tasks needed the engine — the fallback thesis is under pressure.`);
+  }
+  console.log(`${B("Task escalation")} ${DIM("— tasks where NO read succeeded (the thesis metric)")}`);
+  console.log(`  ${verdict}\n`);
+
+  // ── Read hit rate: a SEPARATE concern — agent URL-picking quality ────────
+  console.log(B("Read hit rate") + DIM("  — of the URLs the agent chose, how many were readable?"));
   const row = (label: string, n: number, color = (s: string) => s) =>
     console.log(`  ${color(pad(label, 14))} ${String(n).padStart(4)}  ${color(String(pct(n, reads.total) + "%").padStart(4))}  ${color("█".repeat(Math.round(pct(n, reads.total) / 3)))}`);
-  row("ok (read won)", reads.ok, GRN);
+  row("ok", reads.ok, GRN);
   row("doorman", reads.doorman, RED);
   row("js-shell", reads.jsShell, RED);
   row("empty", reads.empty, DIM);
   row("fetch-failed", reads.fetchFailed, DIM);
   if (reads.pulls > 0) console.log(DIM(`  (${reads.pulls} handle pulls — search-within-page, not counted)`));
-
-  // A verdict needs a sample. Declaring the thesis dead on 10 reads would be
-  // exactly the over-claiming this whole project exists to avoid.
-  const MIN = 20;
-  const eRate = pct(escalated, reads.total);
-  let verdict: string;
-  if (reads.total < MIN) {
-    verdict = DIM(`${eRate}% so far, but only ${reads.total} reads — provisional; need ≥${MIN} for a real verdict.`);
-  } else if (eRate < 30) {
-    verdict = GRN(`✓ ${eRate}% escalation — the engine remains a genuine fallback. Thesis holds.`);
-  } else if (eRate < 50) {
-    verdict = YEL(`~ ${eRate}% escalation — watch this. The engine is pulling toward the main path.`);
-  } else {
-    verdict = RED(`✗ ${eRate}% escalation — the "browser is a fallback" thesis is under real pressure.`);
-  }
-  console.log(`\n  ${B("escalation rate:")} ${verdict}`);
   console.log(
     DIM(
-      "  note: this is escalation as the AGENT experienced it — its URL choices and any\n" +
-        "  over-reading inflate it above the web's base rate. That gap is the point.\n",
+      `\n  ${pct(reads.doorman + reads.jsShell, reads.total)}% of chosen URLs needed a browser — but that's agent\n` +
+        "  URL choice, NOT task escalation. A skeptical agent routes around them.\n",
     ),
   );
 
