@@ -84,8 +84,20 @@ export class EpisodeRecorder {
   constructor(dir: string) {
     this.dir = resolve(dir);
     this.file = resolve(this.dir, "episodes.jsonl");
-    // Safety net: a crash or ctrl-c must still leave the episode on disk.
+    // Durability. `exit` covers normal completion and process.exit() (so ctrl-c,
+    // which Ink turns into a clean exit, is caught). But `exit` does NOT fire on
+    // signal death — closing the terminal sends SIGHUP, and the episode was
+    // being lost. Handle those explicitly: flush, then exit. finish() is
+    // idempotent, so overlapping paths are safe. SIGINT is left to Ink, whose
+    // clean unmount restores the terminal; intercepting it here would leave raw
+    // mode on. (Bug found 2026-07-21: an 18-read interactive session vanished.)
     process.on("exit", () => this.finish("process-exit"));
+    for (const sig of ["SIGHUP", "SIGTERM"] as const) {
+      process.on(sig, () => {
+        this.finish(sig.toLowerCase());
+        process.exit(0);
+      });
+    }
   }
 
   attach(tracer: Tracer): () => void {
