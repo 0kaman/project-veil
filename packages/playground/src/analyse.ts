@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnv, repoRoot } from "./config.js";
 import type { Episode, ReadOutcomes } from "./episode.js";
+import { classifyTasks } from "./metrics.js";
 
 const B = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const DIM = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -71,29 +72,47 @@ function main(): void {
   console.log(`\n${B("VEIL ESCALATION ANALYSIS")}  ${DIM(file)}`);
   console.log(`${eps.length} sessions · ${searches} searches · ${reads.total} reads\n`);
 
-  // ── The thesis metric: TASK-level, not read-level ────────────────────────
-  // The thesis is about whether TASKS need a browser, not whether individual
-  // reads fail. A doorman the agent reads PAST is not an escalation — the task
-  // still succeeds on the cheap path. So a task escalated only if it got NO
-  // successful read at all. (Discovered by reading the trace: tasks that hit
-  // doormen still answered from the next result — read-level 50%, task-level 0%.)
-  const tasksWithReads = eps.filter((e) => e.reads.total > 0);
-  const escalatedTasks = tasksWithReads.filter((e) => e.reads.ok === 0);
-  const taskEsc = pct(escalatedTasks.length, tasksWithReads.length);
+  // ── Task outcomes — EVERY task, nothing hidden ───────────────────────────
+  // The thesis is about whether TASKS need a browser. Three outcomes partition
+  // every recorded task:
+  //   - answered:    ≥1 read succeeded → cheap path won by reading.
+  //   - search-only: searched, read NOTHING. Ambiguous — either the snippet
+  //                  answered it, OR the agent gave up because it needed the
+  //                  engine (the BLR→DEL fare: form-gated, no readable source).
+  //   - dead-end:    had reads, ALL failed → definitely needed the engine.
+  // Earlier this metric filtered to tasks-with-reads, so search-only tasks —
+  // including genuine capability gaps — VANISHED. Now they're a first-class row.
+  const { answered, searchOnly, deadEnd } = classifyTasks(eps);
+  const n = eps.length;
 
+  console.log(`${B("Task outcomes")} ${DIM("— every task, nothing hidden")}`);
+  const trow = (label: string, count: number, note: string, color: (s: string) => string) =>
+    console.log(`  ${color(pad(label, 14))} ${String(count).padStart(3)}  ${color((pct(count, n) + "%").padStart(4))}  ${DIM(note)}`);
+  trow("answered", answered.length, "read succeeded — cheap path won", GRN);
+  trow("search-only", searchOnly.length, "read nothing — snippet-answered OR gave up (review)", YEL);
+  trow("dead-end", deadEnd.length, "all reads failed — needed the engine (not built)", RED);
+
+  // Firm engine-need is the dead-end rate — the lower bound. search-only hides an
+  // unknown number of real gaps, so it's flagged, not counted either way.
+  const firm = pct(deadEnd.length, n);
   const MIN_TASKS = 10;
   let verdict: string;
-  if (tasksWithReads.length < MIN_TASKS) {
-    verdict = DIM(`${taskEsc}% so far, but only ${tasksWithReads.length} tasks — provisional; need ≥${MIN_TASKS}.`);
-  } else if (taskEsc < 20) {
-    verdict = GRN(`✓ ${taskEsc}% of tasks needed the engine — it's a genuine fallback. Thesis holds.`);
-  } else if (taskEsc < 40) {
-    verdict = YEL(`~ ${taskEsc}% of tasks needed the engine — watch this.`);
+  if (n < MIN_TASKS) {
+    verdict = DIM(`${firm}% firm engine-need so far, but only ${n} tasks — provisional; need ≥${MIN_TASKS}.`);
+  } else if (firm < 20) {
+    verdict = GRN(`✓ ${firm}% of tasks definitely needed the engine — a genuine fallback. Thesis holds.`);
+  } else if (firm < 40) {
+    verdict = YEL(`~ ${firm}% definitely needed the engine — watch this.`);
   } else {
-    verdict = RED(`✗ ${taskEsc}% of tasks needed the engine — the fallback thesis is under pressure.`);
+    verdict = RED(`✗ ${firm}% definitely needed the engine — the fallback thesis is under pressure.`);
   }
-  console.log(`${B("Task escalation")} ${DIM("— tasks where NO read succeeded (the thesis metric)")}`);
-  console.log(`  ${verdict}\n`);
+  console.log(`\n  ${B("verdict:")} ${verdict}`);
+  if (searchOnly.length > 0) {
+    console.log(DIM(`  caveat: ${searchOnly.length} search-only task(s) not counted — some are real gaps (form-gated`));
+    console.log(DIM("  fares, live data) the engine would need to fill. Review them under Per goal.\n"));
+  } else {
+    console.log();
+  }
 
   // ── Read hit rate: a SEPARATE concern — agent URL-picking quality ────────
   console.log(B("Read hit rate") + DIM("  — of the URLs the agent chose, how many were readable?"));
@@ -112,14 +131,16 @@ function main(): void {
     ),
   );
 
-  // ── Per-goal — the aggregate lies, so show the split ─────────────────────
-  console.log(B("Per goal") + DIM("  — escalation varies by task type; the aggregate hides it"));
-  for (const e of eps.filter((x) => x.reads.total > 0).sort((a, b) => b.escalationRate - a.escalationRate)) {
-    const er = Math.round(e.escalationRate * 100);
-    const c = er < 30 ? GRN : er < 50 ? YEL : RED;
-    console.log(
-      `  ${c(String(er + "%").padStart(4))} ${DIM(`(${e.reads.ok}/${e.reads.total} ok)`)}  ${pad(e.goal, 60)}`,
-    );
+  // ── Per-goal — every task, including the search-only ones ────────────────
+  console.log(B("Per goal") + DIM("  — outcome per task; search-only tasks shown, not hidden"));
+  const rank = (e: (typeof eps)[number]) =>
+    e.reads.total === 0 ? 2 : e.reads.ok === 0 ? 3 : 1; // dead-end top, then search-only, then answered
+  for (const e of [...eps].sort((a, b) => rank(b) - rank(a))) {
+    let tag: string;
+    if (e.reads.total === 0) tag = YEL("srch-only");
+    else if (e.reads.ok === 0) tag = RED("dead-end ");
+    else tag = GRN(`${e.reads.ok}/${e.reads.total} ok  `);
+    console.log(`  ${tag}  ${pad(e.goal === "(interactive)" ? "(interactive session)" : e.goal, 58)}`);
   }
   console.log(DIM("\n  (per-task, not per-class — tag goals to split research vs commercial)"));
 
