@@ -8,7 +8,10 @@
 > Mistral drives the real stdio server, Claude-Code-style. End to end, live: a
 > research task ran search → read → grounded answer in **5.7s / 7,554 tokens**,
 > vs v1's 104s / 43,736 tokens on the same shape of task. The escalation metric
-> (`pnpm play:analyse`) is built too. Still a promise: the engine (`@veil/core`).
+> (`pnpm play:analyse`) is built too. `@veil/core` has landed its FIRST slice —
+> `Renderer.render(url)`, the browser as a renderer for the read tier: it turns a
+> js-shell into real HTML (Reddit: fetch 6 words → render 1,722). Still a promise:
+> wiring render into read's escalation, and the behavior graph / interaction.
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
