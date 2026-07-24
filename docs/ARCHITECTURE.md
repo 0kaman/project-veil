@@ -10,8 +10,10 @@
 > vs v1's 104s / 43,736 tokens on the same shape of task. The escalation metric
 > (`pnpm play:analyse`) is built too. `@veil/core` has landed its FIRST slice —
 > `Renderer.render(url)`, the browser as a renderer for the read tier: it turns a
-> js-shell into real HTML (Reddit: fetch 6 words → render 1,722). Still a promise:
-> wiring render into read's escalation, and the behavior graph / interaction.
+> js-shell into real HTML (Reddit: fetch 6 words → render 1,722). Render is now
+> WIRED into read's escalation — `veil_read` auto-escalates a js-shell/doorman to
+> the browser and the receipt says `via: render`. Still a promise: the behavior
+> graph / interaction (the flight-form case).
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,

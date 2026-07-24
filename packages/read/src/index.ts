@@ -12,7 +12,7 @@
  */
 export type { Receipt, ReadStatus, Extractor, Via } from "./receipt.js";
 export { formatReceipt } from "./receipt.js";
-export type { ReadResult, ReadConfig, FetchLike } from "./read.js";
+export type { ReadResult, ReadConfig, FetchLike, RenderFn } from "./read.js";
 export { HandleStore, type StoredRead, type Pull } from "./handles.js";
 export {
   countWords,
@@ -24,7 +24,7 @@ export {
 } from "./extract.js";
 
 import { HandleStore } from "./handles.js";
-import { defaultConfig, performRead, type FetchLike, type ReadConfig, type ReadResult } from "./read.js";
+import { defaultConfig, performRead, type FetchLike, type ReadConfig, type ReadResult, type RenderFn } from "./read.js";
 import type { Pull } from "./handles.js";
 
 export interface ReaderOptions {
@@ -34,22 +34,36 @@ export interface ReaderOptions {
   config?: Partial<ReadConfig>;
   /** Share a handle store across readers, or inject one for tests. */
   store?: HandleStore;
+  /**
+   * Escalation renderer. When a fetch hits a js-shell or doorman and this is
+   * set, the page is re-fetched through a real browser. Injected — @veil/read
+   * never imports @veil/core, so the cheap path stays browserless. @veil/mcp
+   * wires a @veil/core Renderer here.
+   */
+  renderer?: RenderFn;
 }
 
 export class Reader {
   private readonly fetchImpl: FetchLike;
   private readonly store: HandleStore;
   private readonly config: ReadConfig;
+  private readonly renderer?: RenderFn;
 
   constructor(opts: ReaderOptions = {}) {
     this.fetchImpl = opts.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
     this.store = opts.store ?? new HandleStore();
     this.config = { ...defaultConfig(), ...opts.config };
+    this.renderer = opts.renderer;
   }
 
   /** Read a URL. Never throws — a failure comes back as a receipt. */
   read(url: string): Promise<ReadResult> {
-    return performRead(url, { fetchImpl: this.fetchImpl, store: this.store, config: this.config });
+    return performRead(url, {
+      fetchImpl: this.fetchImpl,
+      store: this.store,
+      config: this.config,
+      renderer: this.renderer,
+    });
   }
 
   /**

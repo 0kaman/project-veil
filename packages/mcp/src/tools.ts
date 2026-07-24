@@ -71,10 +71,12 @@ export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
       title: "Read a page (or pull more from one)",
       description:
         "Get what a web page SAYS — its text, extracted clean. USE THIS to read any URL " +
-        "from a search result. Fast (~600ms), no browser. Long pages are truncated and " +
-        "return a handle like 'r1'; call veil_read again with that handle plus a query to " +
-        "pull a specific part. If the result says JS-SHELL or DOORMAN, the page needs a " +
-        "browser (not yet available) — do not retry it here.",
+        "from a search result. Fast (~600ms) by fetch; if the page is behind JavaScript or " +
+        "blocks plain requests, it AUTO-ESCALATES to a real browser render (slower, ~2–6s) " +
+        "— the receipt says 'via: render' when it did. Long pages are truncated and return " +
+        "a handle like 'r1'; call veil_read again with that handle plus a query to pull a " +
+        "specific part. If it still says DOORMAN or 'blocked both ways', the site defeats " +
+        "even the browser — pick another source, do not retry.",
       inputSchema: {
         url: z
           .string()

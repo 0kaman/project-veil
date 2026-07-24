@@ -11,9 +11,9 @@
  * See docs/DECISIONS.md 2026-07-15 (the receipt) and 2026-07-19 (fallback).
  */
 
-/** How the bytes were obtained. Only `fetch` exists today; the others are the
- * escalation targets the ladder will grow into. */
-export type Via = "fetch";
+/** How the bytes were obtained. `fetch` is the cheap path; `render` is the
+ * escalation — headless Chrome ran the page's JS (via an injected renderer). */
+export type Via = "fetch" | "render";
 
 /**
  * The outcome of a read. This is the single most important field: it routes

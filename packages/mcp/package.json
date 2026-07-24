@@ -17,7 +17,8 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@veil/read": "workspace:*",
     "@veil/search": "workspace:*",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@veil/core": "workspace:*"
   },
   "engines": {
     "node": ">=22"

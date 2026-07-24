@@ -114,3 +114,60 @@ describe("read — handle & pull (handle-not-payload)", () => {
     expect(reader.more("r999", "anything")).toBeNull();
   });
 });
+
+describe("read — escalation to a renderer", () => {
+  // A renderer that returns the clean article regardless of URL, standing in for
+  // headless Chrome running a page's JS.
+  const renderer = async (url: string) => ({
+    html: fixture("clean-article"),
+    finalUrl: url,
+    ok: true,
+    ms: 1200,
+  });
+
+  it("js-shell fetch escalates to render → ok via render", async () => {
+    const reader = new Reader({ fetchImpl: mockFetch(fixture("js-shell")), renderer });
+    const r = await reader.read("https://spa.test/x");
+    expect(r.receipt.status).toBe("ok");
+    expect(r.receipt.via).toBe("render");
+    expect(r.text).toMatch(/stateless/i);
+  });
+
+  it("doorman (403) escalates to render → ok via render", async () => {
+    const reader = new Reader({ fetchImpl: mockFetch("nope", { status: 403 }), renderer });
+    const r = await reader.read("https://blocked.test/x");
+    expect(r.receipt.status).toBe("ok");
+    expect(r.receipt.via).toBe("render");
+  });
+
+  it("a clean fetch never escalates — render is untouched", async () => {
+    let called = false;
+    const spy = async (url: string) => {
+      called = true;
+      return { html: "", finalUrl: url, ok: true, ms: 0 };
+    };
+    const r = await new Reader({ fetchImpl: mockFetch(fixture("clean-article")), renderer: spy }).read("https://x.test/a");
+    expect(r.receipt.via).toBe("fetch");
+    expect(called).toBe(false);
+  });
+
+  it("no renderer configured → honest js-shell verdict, no escalation", async () => {
+    const r = await new Reader({ fetchImpl: mockFetch(fixture("js-shell")) }).read("https://spa.test/x");
+    expect(r.receipt.status).toBe("js-shell");
+    expect(r.receipt.via).toBe("fetch");
+  });
+
+  it("render also fails → blocked both ways, said plainly", async () => {
+    const deadRenderer = async (url: string) => ({ html: "", finalUrl: url, ok: false, error: "fingerprinted", ms: 500 });
+    const r = await new Reader({ fetchImpl: mockFetch("nope", { status: 403 }), renderer: deadRenderer }).read("https://cf.test/x");
+    expect(r.receipt.status).toBe("doorman");
+    expect(r.receipt.note).toMatch(/render also failed/i);
+  });
+
+  it("render returns another shell → blocked both ways", async () => {
+    const shellRenderer = async (url: string) => ({ html: fixture("js-shell"), finalUrl: url, ok: true, ms: 800 });
+    const r = await new Reader({ fetchImpl: mockFetch(fixture("js-shell")), renderer: shellRenderer }).read("https://spa.test/x");
+    expect(r.receipt.via).toBe("render");
+    expect(r.receipt.note).toMatch(/blocked both ways/i);
+  });
+});
