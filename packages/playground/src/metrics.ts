@@ -17,12 +17,30 @@ export interface TaskBuckets {
   searchOnly: Episode[];
   /** Had reads, ALL failed — definitely needed the engine. */
   deadEnd: Episode[];
+  /** Session crashed (e.g. an LLM 5xx) — NOT a valid task outcome. Kept apart so
+   * a crash after search isn't miscounted as "search-only". */
+  errored: Episode[];
+}
+
+/**
+ * A session that ended in an error is not a task outcome. The `errored` flag is
+ * the primary signal; the fallback catches episodes recorded BEFORE that flag
+ * existed — a search with no follow-up LLM call (llmCalls < 2) means the answer
+ * call never ran, i.e. it crashed after searching. A genuine search-only task
+ * (snippet-answered) always makes a second call to write the answer.
+ */
+function isErrored(e: Episode): boolean {
+  if (e.errored) return true;
+  return e.searches > 0 && e.reads.total === 0 && e.llmCalls < 2;
 }
 
 export function classifyTasks(eps: Episode[]): TaskBuckets {
+  const errored = eps.filter(isErrored);
+  const valid = eps.filter((e) => !isErrored(e));
   return {
-    answered: eps.filter((e) => e.reads.ok > 0),
-    searchOnly: eps.filter((e) => e.reads.total === 0),
-    deadEnd: eps.filter((e) => e.reads.total > 0 && e.reads.ok === 0),
+    errored,
+    answered: valid.filter((e) => e.reads.ok > 0),
+    searchOnly: valid.filter((e) => e.reads.total === 0),
+    deadEnd: valid.filter((e) => e.reads.total > 0 && e.reads.ok === 0),
   };
 }

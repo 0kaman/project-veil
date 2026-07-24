@@ -41,6 +41,9 @@ export interface Episode {
   promptTokens: number;
   completionTokens: number;
   warnings: Record<string, number>;
+  /** The session ended in an error (e.g. an LLM 5xx). Its task outcome is
+   * unreliable — it must not be counted as a real "search-only" or "answered". */
+  errored: boolean;
 }
 
 /** Read the receipt status from a tool-result's `via` line. */
@@ -80,6 +83,7 @@ export class EpisodeRecorder {
   private promptTokens = 0;
   private completionTokens = 0;
   private warnings: Record<string, number> = {};
+  private errored = false;
 
   constructor(dir: string) {
     this.dir = resolve(dir);
@@ -132,6 +136,11 @@ export class EpisodeRecorder {
       case "warn":
         this.warnings[e.code] = (this.warnings[e.code] ?? 0) + 1;
         break;
+      case "error":
+        // The turn threw (e.g. an LLM 5xx). The session is incomplete — mark it
+        // so the metric doesn't read a crash as a task that "chose to read nothing".
+        this.errored = true;
+        break;
       case "run.end":
         this.finish(e.reason);
         break;
@@ -162,6 +171,7 @@ export class EpisodeRecorder {
       promptTokens: this.promptTokens,
       completionTokens: this.completionTokens,
       warnings: this.warnings,
+      errored: this.errored,
     };
 
     try {

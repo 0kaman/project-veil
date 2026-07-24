@@ -82,15 +82,19 @@ function main(): void {
   //   - dead-end:    had reads, ALL failed → definitely needed the engine.
   // Earlier this metric filtered to tasks-with-reads, so search-only tasks —
   // including genuine capability gaps — VANISHED. Now they're a first-class row.
-  const { answered, searchOnly, deadEnd } = classifyTasks(eps);
-  const n = eps.length;
+  const { answered, searchOnly, deadEnd, errored } = classifyTasks(eps);
+  // Percentages are over VALID tasks — a crashed session is not a task outcome.
+  const n = answered.length + searchOnly.length + deadEnd.length;
 
-  console.log(`${B("Task outcomes")} ${DIM("— every task, nothing hidden")}`);
+  console.log(`${B("Task outcomes")} ${DIM(`— ${n} valid tasks (crashed sessions excluded)`)}`);
   const trow = (label: string, count: number, note: string, color: (s: string) => string) =>
     console.log(`  ${color(pad(label, 14))} ${String(count).padStart(3)}  ${color((pct(count, n) + "%").padStart(4))}  ${DIM(note)}`);
   trow("answered", answered.length, "read succeeded — cheap path won", GRN);
   trow("search-only", searchOnly.length, "read nothing — snippet-answered OR gave up (review)", YEL);
   trow("dead-end", deadEnd.length, "all reads failed — needed the engine (not built)", RED);
+  if (errored.length > 0) {
+    console.log(`  ${DIM(pad("errored", 14))} ${DIM(String(errored.length).padStart(3))}  ${DIM("    ")}  ${DIM("session crashed (e.g. LLM 5xx) — not a task outcome, excluded")}`);
+  }
 
   // Firm engine-need is the dead-end rate — the lower bound. search-only hides an
   // unknown number of real gaps, so it's flagged, not counted either way.
@@ -131,13 +135,15 @@ function main(): void {
     ),
   );
 
-  // ── Per-goal — every task, including the search-only ones ────────────────
-  console.log(B("Per goal") + DIM("  — outcome per task; search-only tasks shown, not hidden"));
+  // ── Per-goal — every task, tagged by outcome ─────────────────────────────
+  console.log(B("Per goal") + DIM("  — outcome per task; crashes and gaps shown, not hidden"));
+  const erroredSet = new Set(errored);
   const rank = (e: (typeof eps)[number]) =>
-    e.reads.total === 0 ? 2 : e.reads.ok === 0 ? 3 : 1; // dead-end top, then search-only, then answered
+    erroredSet.has(e) ? 0 : e.reads.total === 0 ? 2 : e.reads.ok === 0 ? 3 : 1;
   for (const e of [...eps].sort((a, b) => rank(b) - rank(a))) {
     let tag: string;
-    if (e.reads.total === 0) tag = YEL("srch-only");
+    if (erroredSet.has(e)) tag = DIM("errored  ");
+    else if (e.reads.total === 0) tag = YEL("srch-only");
     else if (e.reads.ok === 0) tag = RED("dead-end ");
     else tag = GRN(`${e.reads.ok}/${e.reads.total} ok  `);
     console.log(`  ${tag}  ${pad(e.goal === "(interactive)" ? "(interactive session)" : e.goal, 58)}`);
