@@ -9,7 +9,7 @@
 import type { SearchResult } from "@veil/search";
 import type { ReadResult } from "@veil/read";
 import type { Pull } from "@veil/read";
-import type { OpenResult, QueryResult, GoneReason, BehaviorNode, ActResult } from "@veil/core";
+import type { OpenResult, QueryResult, GoneReason, BehaviorNode, ActResult, ReplayResult } from "@veil/core";
 
 export function renderSearch(r: SearchResult): string {
   const c = r.receipt;
@@ -148,6 +148,43 @@ export function renderAct(node: string, action: string, r: ActResult): string {
       "note: nothing observably changed — the click landed but the page did not react. " +
         "It may need different input, or the effect may be delayed.",
     );
+  }
+  return parts.join("\n");
+}
+
+export function renderReplay(node: string, r: ReplayResult): string {
+  if (r.refusal) {
+    // A refusal explains itself and points at the recovery. The gate in
+    // particular must never look like a bug.
+    return `via: replay · ${r.ms}ms · REFUSED (${r.refusal})\n${r.detail ?? ""}`;
+  }
+  const resp = r.response;
+  const head =
+    `via: replay · ${r.ms}ms · ${r.method} ${r.url}` +
+    (resp ? ` → ${resp.status} ${resp.statusText}` : "");
+  const parts = [head];
+
+  // What differs from the captured original — one sighting is not a schema, so
+  // the caller sees exactly what was substituted and what they changed.
+  if (r.refreshed?.length) parts.push(`refreshed from the live page: ${r.refreshed.join(", ")}`);
+  if (r.edited?.length) parts.push(`your edits: ${r.edited.join(", ")}`);
+
+  // A SUCCESSFUL replay can still leave the page broken: it spends a single-use
+  // token without completing the app's rotation handshake. Measured, not assumed
+  // — so say it, or the agent's next click fails for no visible reason.
+  if (r.desynced) parts.push(`note: ${r.detail}`);
+
+  if (resp && resp.status === 403) {
+    parts.push(
+      "note: rejected. A one-shot token may already be spent — re-read the page " +
+        "(veil_open/veil_query) or use veil_do to perform it for real. Do not retry this as-is.",
+    );
+  }
+  if (r.error) parts.push(`error: ${r.error}`);
+  if (resp) {
+    parts.push("");
+    parts.push(resp.body || "(empty response)");
+    if (resp.truncated) parts.push("… (response truncated)");
   }
   return parts.join("\n");
 }

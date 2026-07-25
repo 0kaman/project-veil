@@ -18,7 +18,7 @@ import { z } from "zod";
 import type { Search } from "@veil/search";
 import type { Reader } from "@veil/read";
 import type { SessionPool } from "@veil/core";
-import { renderSearch, renderRead, renderPull, renderOpen, renderQuery, renderSessions, renderAct } from "./format.js";
+import { renderSearch, renderRead, renderPull, renderOpen, renderQuery, renderSessions, renderAct, renderReplay } from "./format.js";
 
 export interface VeilDeps {
   search: Search;
@@ -182,6 +182,41 @@ export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
         return text(renderAct(node, action, res));
       }),
   );
+
+  // veil_replay is registered ONLY when config permits. When it isn't, the model
+  // never sees it and degrades to veil_do — slower, correct. A model should not
+  // have to reason about a tool it cannot use, and an unregistered tool cannot be
+  // talked into firing by text on a web page.
+  if (pool.config.replay !== "off") {
+    const modeNote =
+      pool.config.replay === "safe"
+        ? "Only idempotent requests (GET/HEAD/OPTIONS) may be replayed here; anything that " +
+          "changes server state must go through veil_do."
+        : "Mutations are permitted in this configuration — be deliberate.";
+    server.registerTool(
+      "veil_replay",
+      {
+        title: "Re-fire a request the page already made",
+        description:
+          "Fire again the exact request a veil_do already triggered, optionally with edited " +
+          "fields — far faster than clicking (~1-2ms vs seconds). Returns the API RESPONSE, not " +
+          "a page: it changes server state and gives you data, it does NOT drive the UI, so read " +
+          "the page again if you need the new state. Only works after veil_do has performed that " +
+          "action once. " + modeNote,
+        inputSchema: {
+          session: z.string().describe("Session id."),
+          node: z.string().describe("Element id whose request to re-fire."),
+          body: z.record(z.unknown()).optional().describe("Fields to change in the request body."),
+          query: z.record(z.string()).optional().describe("Query parameters to set."),
+          headers: z.record(z.string()).optional().describe("Headers to add or override."),
+        },
+      },
+      ({ session, node, body, query, headers }) =>
+        guard(async () =>
+          text(renderReplay(node, await pool.replay(session, node, { body, query, headers }))),
+        ),
+    );
+  }
 
   server.registerTool(
     "veil_sessions",

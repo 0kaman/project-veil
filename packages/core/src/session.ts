@@ -22,6 +22,8 @@ import { browserTreeRssMb } from "./browser/memory.js";
 import { awaitSettle, settleConfig, type SettleResult } from "./browser/settle.js";
 import { dispatchAction, type Action, type ActionFailure } from "./browser/interact.js";
 import { NetworkRecorder, pickPrimary, type CapturedRequest } from "./browser/capture.js";
+import { replayRequest, type ReplayEdits, type ReplayOutcome } from "./browser/replay.js";
+import { gateReplay, loadConfig, type VeilConfig } from "./config.js";
 import { buildGraph } from "./graph/build.js";
 import { projectLean } from "./graph/project.js";
 import { queryNodes, type NodeFilter, type QueryResult } from "./graph/query.js";
@@ -42,6 +44,10 @@ export interface Session {
   /** Replay templates, keyed by stable display id. SESSION state, not graph
    * state: it survives every rebuild (DECISIONS 2026-07-25). */
   replay: Map<string, CapturedRequest>;
+  /** Token values consumed by replays here. Replay spends a single-use token
+   * without completing the app's rotation handshake, so we must remember what
+   * we burned — see browser/replay.ts, "the second residual". */
+  spentTokens: Set<string>;
 }
 
 export interface ActResult {
@@ -57,6 +63,14 @@ export interface ActResult {
   /** True when this taught the replay cache a new template. */
   learnedReplay?: boolean;
   noOp?: boolean;
+}
+
+export interface ReplayResult extends Partial<ReplayOutcome> {
+  ok: boolean;
+  ms: number;
+  /** Set when we refused before firing: no template, gone session, or the gate. */
+  refusal?: "gone" | "no-template" | "gated" | "stale-token";
+  detail?: string;
 }
 
 /** Why a session is no longer available — reported, never silent. */
@@ -82,6 +96,8 @@ export interface PoolOptions extends SettleOptions {
   idleMs?: number;
   /** Hard ceiling as a backstop against pathological growth between checks. */
   maxSessions?: number;
+  /** Replay gate + tunables. Defaults to loadConfig() (env-driven). */
+  config?: Partial<VeilConfig>;
 }
 
 function envNum(name: string, d: number): number {
@@ -101,9 +117,11 @@ export class SessionPool {
   private readonly settle: SettleOptions;
   /** Settle overrides, forwarded to awaitSettle. */
   private readonly settleOver: { quietMs?: number; capMs?: number; longLivedMs?: number };
+  readonly config: VeilConfig;
 
   constructor(options: PoolOptions = {}) {
-    const { budgetMb, idleMs, maxSessions, ...settle } = options;
+    const { budgetMb, idleMs, maxSessions, config, ...settle } = options;
+    this.config = loadConfig(config);
     this.settle = settle;
     this.settleOver = {
       ...(settle.quietMs !== undefined && { quietMs: settle.quietMs }),
@@ -190,6 +208,7 @@ export class SessionPool {
         lastUsed: now,
         recorder,
         replay: new Map(),
+        spentTokens: new Set(),
       });
 
       return {
@@ -298,6 +317,61 @@ export class SessionPool {
       learnedReplay,
       noOp: isNoOp(diff) && !fired,
     };
+  }
+
+  /**
+   * Replay what a node's interaction fired, with optional edits. Returns the API
+   * RESPONSE, not a graph — a raw request changes server state and returns data;
+   * it does not drive the app's DOM. Read the graph afterwards if you need the
+   * resulting page state.
+   */
+  async replay(sessionId: string, nodeId: string, edits?: ReplayEdits): Promise<ReplayResult> {
+    const t0 = Date.now();
+    const s = this.sessions.get(sessionId);
+    if (!s) {
+      return {
+        ok: false,
+        ms: Date.now() - t0,
+        refusal: "gone",
+        detail: `session ${sessionId} is gone (${this.goneReason(sessionId)}) — re-open the page`,
+      };
+    }
+    s.lastUsed = Date.now();
+
+    const tmpl = s.replay.get(nodeId);
+    if (!tmpl) {
+      // You cannot replay what was never observed. That's the guard, not a gap:
+      // veil_do has to perform it once so we know what "it" is.
+      const known = [...s.replay.keys()];
+      return {
+        ok: false,
+        ms: Date.now() - t0,
+        refusal: "no-template",
+        detail:
+          `nothing captured for "${nodeId}" — veil_do it once first so its request is learned` +
+          (known.length ? `. Replayable here: ${known.join(", ")}` : ""),
+      };
+    }
+
+    // The gate, checked again HERE and not only at tool registration: config at
+    // startup is not the same thing as config at the moment a request leaves.
+    const verdict = gateReplay(this.config, tmpl.method, tmpl.url);
+    if (!verdict.allowed) {
+      return { ok: false, ms: Date.now() - t0, refusal: "gated", detail: verdict.reason };
+    }
+
+    const outcome = await replayRequest(s.client, tmpl, edits, s.spentTokens);
+    if (outcome.staleRefusal) {
+      return { ok: false, ms: Date.now() - t0, refusal: "stale-token", detail: outcome.staleRefusal };
+    }
+    // Only a SUCCESS consumes a token; a rejection means the server kept it.
+    if (outcome.ok) for (const t of outcome.tokensSent) s.spentTokens.add(t);
+    const detail = outcome.desynced
+      ? `this replay consumed a single-use token and the page still holds it — the ` +
+        `page is now out of step with the server, so further clicks on this node will ` +
+        `fail. Re-perceive (veil_open) before acting on it again.`
+      : undefined;
+    return { ...outcome, ms: Date.now() - t0, ...(detail && { detail }) };
   }
 
   /** Query a session's host-side graph. Zero browser cost — it's a filter. */

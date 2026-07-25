@@ -46,6 +46,21 @@ export type { Action, ActionKind, ActionFailure } from "./browser/interact.js";
 export { awaitSettle, settleConfig, type SettleResult, type SettleConfig } from "./browser/settle.js";
 export { diffGraphs, isNoOp, type GraphDiff } from "./graph/diff.js";
 export { urlPattern, type CapturedRequest } from "./browser/capture.js";
+export type { ReplayResult } from "./session.js";
+export {
+  applyEdits,
+  replayRequest,
+  type ReplayEdits,
+  type ReplayOutcome,
+  type ReplayResponse,
+} from "./browser/replay.js";
+export {
+  loadConfig,
+  gateReplay,
+  type VeilConfig,
+  type ReplayMode,
+  type GateVerdict,
+} from "./config.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { createCDPClient, type CDPClient } from "./browser/cdp-client.js";

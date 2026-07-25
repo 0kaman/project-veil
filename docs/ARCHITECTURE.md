@@ -19,8 +19,14 @@
 > `veil_query` / `veil_sessions` / `veil_close` over MCP. **Slice 3: settle +
 > `veil_do` + network capture** — actionable-surface settle, actionability checks
 > that refuse with a reason, a diff instead of a re-dump, and interactions that
-> teach the replay cache. Seven tools live. Still a promise: `veil_replay` and
-> its config gate.
+> teach the replay cache. **Slice 4: `veil_replay` + the config gate** —
+> refresh-at-fire-time (not a TTL), `replay: off|safe|all` defaulting to `safe`,
+> enforced at tool registration *and* again at fire time. Measured on a localhost
+> fixture, one act+replay per fresh session: median click **330ms → replay 6ms
+> (~55×)** — not v1's 121×, a different measurement against a trivial server.
+> Replay also reports the desync it causes on single-use-token pages, and refuses
+> to re-spend a token it already burned (DECISIONS 2026-07-25). **Eight tools
+> live — the act path is complete.**
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
