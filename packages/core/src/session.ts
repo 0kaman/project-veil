@@ -62,6 +62,10 @@ export interface ActResult {
   fired?: { method: string; url: string; status?: number };
   /** True when this taught the replay cache a new template. */
   learnedReplay?: boolean;
+  /** What a type/clear/select left in the field, read back from the page. A
+   * field can reject or reformat input, and saying nothing about that is how a
+   * wrong value travels downstream looking like a perception failure. */
+  value?: string;
   noOp?: boolean;
 }
 
@@ -350,6 +354,7 @@ export class SessionPool {
         fired: { method: fired.method, url: shortUrl(fired.url), status: fired.status },
       }),
       learnedReplay,
+      ...(dispatched.value !== undefined && { value: dispatched.value }),
       noOp: isNoOp(diff) && !fired,
     };
   }

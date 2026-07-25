@@ -83,6 +83,8 @@ const PAGE = `<!doctype html><html><head><title>Act fixture</title>
        And below it, the other shape: no form at all, just a keydown listener. -->
   <form action="/find" method="GET"><input name="q"></form>
   <input id="jsbox" aria-label="JS search">
+  <!-- Prefilled, like a site that geolocates your origin for you. -->
+  <input id="prefilled" aria-label="Origin" value="Bengaluru">
   <script>
     document.getElementById('jsbox').addEventListener('keydown', function(e){
       if (e.key === 'Enter') fetch('/find?via=keydown&q=' + encodeURIComponent(this.value));
@@ -172,6 +174,43 @@ suite("veil_do — real Chrome (Layer 2)", () => {
       });
       expect(r.ok).toBe(true);
       expect(found.some((u) => u.includes("via=keydown") && u.includes("q=hello"))).toBe(true);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("REPLACES what a prefilled field held, and says what it now holds", async () => {
+    // The bug this locks down cost two rounds of misdiagnosis. Google Flights
+    // pre-fills the origin by geolocation; typing "BLR" produced "BLRBengaluru",
+    // which matches no airport, so the page said "No matching locations found"
+    // and the AX tree had no options to show. I read the missing options as a
+    // perception failure and blamed the AX tree twice. It was the input.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      const r = await pool.act(open.sessionId!, "textbox-origin", { kind: "type", value: "BLR" });
+      expect(r.ok).toBe(true);
+      // replaced, not appended
+      expect(r.value).toBe("BLR");
+      expect(r.value).not.toContain("Bengaluru");
+
+      // and the graph agrees with the receipt
+      const q = pool.query(open.sessionId!, { role: "textbox", limit: 50 });
+      const node = ("returned" in q ? q.returned : []).find((n) => n.id === "textbox-origin");
+      expect(node?.value).toBe("BLR");
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("reports the value a field REFORMATS, rather than the one it was sent", async () => {
+    // Silence about a field rewriting its input is how a wrong value travels on
+    // looking like somebody else's bug.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      const r = await pool.act(open.sessionId!, "textbox-origin", { kind: "clear" });
+      expect(r.value).toBe("");
     } finally {
       await pool.shutdown();
     }

@@ -48,6 +48,8 @@ export interface DispatchResult {
   dismiss?: string[];
   /** The blocker is a backdrop, which has no close control by design. */
   backdrop?: boolean;
+  /** What a value-bearing action left in the field, read back afterwards. */
+  value?: string;
   /** Center point actually used, for debugging. */
   at?: { x: number; y: number };
 }
@@ -175,6 +177,21 @@ async function pressEnter(client: CDPClient): Promise<void> {
   await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
 }
 
+/** Focus and empty a field. Native setter + events, so React's onChange fires. */
+const CLEAR_FN = `function(){ this.focus();
+  var d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), 'value');
+  if (d && d.set) d.set.call(this, ''); else this.value = '';
+  this.dispatchEvent(new Event('input', {bubbles:true}));
+  this.dispatchEvent(new Event('change', {bubbles:true})); return "ok"; }`;
+
+/** What the field holds NOW. A field can reject or reformat what was typed —
+ * date masks, phone formatting — and silence about that is how a wrong value
+ * travels downstream looking like someone else's bug. */
+const READ_VALUE_FN = `function(){
+  try { return this.value !== undefined ? String(this.value) : (this.textContent || ''); }
+  catch (e) { return ''; }
+}`;
+
 /** Type into the focused element as real key events, so frameworks see them. */
 async function typeText(client: CDPClient, textToType: string): Promise<void> {
   for (const ch of textToType) {
@@ -236,19 +253,18 @@ export async function dispatchAction(
         await callOn(client, objectId, `function(){ this.focus(); return "ok"; }`);
         break;
       case "clear":
-        // Native setter + input event, so React's onChange actually fires.
-        await callOn(
-          client,
-          objectId,
-          `function(){ this.focus();
-             var d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), 'value');
-             if (d && d.set) d.set.call(this, ''); else this.value = '';
-             this.dispatchEvent(new Event('input', {bubbles:true}));
-             this.dispatchEvent(new Event('change', {bubbles:true})); return "ok"; }`,
-        );
+        await callOn(client, objectId, CLEAR_FN);
         break;
       case "type": {
-        await callOn(client, objectId, `function(){ this.focus(); return "ok"; }`);
+        // REPLACE, not append. An agent means "set this field to X" — Playwright
+        // splits fill() from type(); we have one verb and it is used as fill.
+        // Measured: Google Flights pre-fills the origin by geolocation, so
+        // typing "BLR" produced "BLRBengaluru", which matches no airport. The
+        // live AX tree then said "No matching locations found" and the whole
+        // failure read as a PERCEPTION bug for two rounds. Clear first, via the
+        // native setter so React's onChange fires, then send real keystrokes so
+        // frameworks that listen for them behave normally.
+        await callOn(client, objectId, CLEAR_FN);
         await typeText(client, action.value ?? "");
         break;
       }
@@ -273,7 +289,12 @@ export async function dispatchAction(
         );
         break;
     }
-    return { ok: true, at };
+    // Read back what the field ended up holding, for the receipt.
+    let value: string | undefined;
+    if (action.kind === "type" || action.kind === "clear" || action.kind === "select") {
+      value = (await callOn(client, objectId, READ_VALUE_FN)) ?? undefined;
+    }
+    return { ok: true, at, ...(value !== undefined && { value }) };
   } catch (err) {
     debugLog("interact: dispatch failed", action.kind, err);
     return { ok: false, failure: "dispatch-failed", detail: msg(err), at };

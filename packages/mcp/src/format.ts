@@ -125,7 +125,10 @@ export function renderAct(node: string, action: string, r: ActResult): string {
   }
   const s = r.settle;
   const settleNote = s ? ` · settled ${s.ms}ms (${s.reason}, ${s.changes} surface changes)` : "";
-  const parts = [`via: engine · ${r.ms}ms · ${action} ${node} ok${settleNote}`];
+  // Echo what the field ACTUALLY holds. A field can reject or reformat what was
+  // typed, and a silent divergence there reads as someone else's bug later.
+  const got = r.value !== undefined ? ` · value=${JSON.stringify(r.value)}` : "";
+  const parts = [`via: engine · ${r.ms}ms · ${action} ${node} ok${got}${settleNote}`];
 
   if (r.fired) {
     parts.push(
