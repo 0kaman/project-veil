@@ -56,11 +56,17 @@ export interface SessionDeps {
   maxSteps: number;
 }
 
+/** Phrasings that mean "I am about to act", not "I am done". Kept narrow: a
+ * false positive costs one extra LLM call, a false negative abandons the task. */
+export const ANNOUNCES_A_STEP = /\b(next|now)\b\s*[:,-]|\bi(?:'ll| will| am going to| need to)\b|\blet me\b|\bproceeding to\b/i;
+const MAX_NUDGES = 2;
+
 export class AgentSession {
   private messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
   private callCounts = new Map<string, number>();
   private step = 0;
   private aborted = false;
+  private nudges = 0;
 
   constructor(private readonly deps: SessionDeps) {}
 
@@ -80,6 +86,7 @@ export class AgentSession {
     tracer.emit({ kind: "user", step: this.step + 1, chars: userText.length, text: userText });
     this.messages.push({ role: "user", content: userText });
     this.aborted = false;
+    this.nudges = 0; // per turn, not per session
 
     try {
       for (let i = 0; i < maxSteps; i++) {
@@ -95,7 +102,31 @@ export class AgentSession {
           content: res.content,
           ...(res.toolCalls.length > 0 && { tool_calls: res.toolCalls }),
         });
-        if (res.toolCalls.length === 0) return;
+        if (res.toolCalls.length === 0) {
+          // The model sometimes ANNOUNCES its next call instead of making it.
+          // Measured: a run ended at step 24 of 60 on "Next: query session s2
+          // for all buttons" — no tool call, so the turn was treated as over and
+          // the task was abandoned mid-way with no report. Nudge once or twice;
+          // if it still will not call, it really is finished.
+          if (this.nudges < MAX_NUDGES && ANNOUNCES_A_STEP.test(res.content ?? streamed)) {
+            this.nudges++;
+            tracer.emit({
+              kind: "warn",
+              step: this.step,
+              code: "ANNOUNCED_NO_CALL",
+              message: (res.content ?? streamed).slice(0, 160),
+            });
+            this.messages.push({
+              role: "user",
+              content:
+                "You described a next step but did not call the tool. If the task is " +
+                "genuinely finished, give your final answer now. Otherwise make that call.",
+            });
+            ui.note(`nudged — said what it would do without doing it (${this.nudges}/${MAX_NUDGES})`);
+            continue;
+          }
+          return;
+        }
 
         for (const call of res.toolCalls) {
           if (this.aborted) {
