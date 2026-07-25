@@ -41,6 +41,11 @@ export {
   type GoneReason,
 } from "./session.js";
 export { browserTreeRssMb } from "./browser/memory.js";
+export type { ActResult } from "./session.js";
+export type { Action, ActionKind, ActionFailure } from "./browser/interact.js";
+export { awaitSettle, settleConfig, type SettleResult, type SettleConfig } from "./browser/settle.js";
+export { diffGraphs, isNoOp, type GraphDiff } from "./graph/diff.js";
+export { urlPattern, type CapturedRequest } from "./browser/capture.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { createCDPClient, type CDPClient } from "./browser/cdp-client.js";

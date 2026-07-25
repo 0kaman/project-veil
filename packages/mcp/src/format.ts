@@ -9,7 +9,7 @@
 import type { SearchResult } from "@veil/search";
 import type { ReadResult } from "@veil/read";
 import type { Pull } from "@veil/read";
-import type { OpenResult, QueryResult, GoneReason, BehaviorNode } from "@veil/core";
+import type { OpenResult, QueryResult, GoneReason, BehaviorNode, ActResult } from "@veil/core";
 
 export function renderSearch(r: SearchResult): string {
   const c = r.receipt;
@@ -109,4 +109,45 @@ export function renderSessions(
   return list
     .map((x) => `${x.id}  ${x.url}  ${x.doers} actions · ${s(x.ageMs)} old · idle ${s(x.idleMs)}`)
     .join("\n");
+}
+
+export function renderAct(node: string, action: string, r: ActResult): string {
+  if (!r.ok) {
+    // A refusal is information: name what blocked it so the agent can adapt
+    // rather than retry the same thing.
+    return (
+      `via: engine · ${r.ms}ms · ${(r.failure ?? "failed").toUpperCase()}\n` +
+      `could not ${action} ${node}: ${r.detail ?? "unknown reason"}`
+    );
+  }
+  const s = r.settle;
+  const settleNote = s ? ` · settled ${s.ms}ms (${s.reason}, ${s.changes} surface changes)` : "";
+  const parts = [`via: engine · ${r.ms}ms · ${action} ${node} ok${settleNote}`];
+
+  if (r.fired) {
+    parts.push(
+      `fired: ${r.fired.method} ${r.fired.url}${r.fired.status ? ` → ${r.fired.status}` : ""}` +
+        (r.learnedReplay ? "  (learned — replayable)" : ""),
+    );
+  }
+
+  const d = r.diff;
+  if (d) {
+    if (d.navigated) parts.push(`navigated: ${d.navigated.from} → ${d.navigated.to}`);
+    const bits: string[] = [];
+    if (d.added.length) bits.push(`+${d.added.length} actions (${d.added.slice(0, 5).join(", ")})`);
+    if (d.removed.length) bits.push(`−${d.removed.length} actions`);
+    for (const c of d.changed.slice(0, 5)) bits.push(`${c.id}: ${c.was} → ${c.now}`);
+    if (d.linksBefore !== d.linksAfter) bits.push(`links ${d.linksBefore} → ${d.linksAfter}`);
+    if (bits.length) parts.push(`changed: ${bits.join(" · ")}`);
+  }
+
+  if (r.noOp) {
+    // Silence would let an agent believe it accomplished something.
+    parts.push(
+      "note: nothing observably changed — the click landed but the page did not react. " +
+        "It may need different input, or the effect may be delayed.",
+    );
+  }
+  return parts.join("\n");
 }

@@ -16,8 +16,11 @@
 > Measured live: github/login 8 doers in **189 tokens** (graph built in 13ms),
 > wikipedia 23 doers + 1,043 links in **318 tokens**. **Slice 2: sessions** —
 > memory-budgeted `SessionPool` (LRU eviction, not rejection) + `veil_open` /
-> `veil_query` / `veil_sessions` / `veil_close` over MCP. Six tools live. Still a
-> promise: `veil_do`, network correlation, replay.
+> `veil_query` / `veil_sessions` / `veil_close` over MCP. **Slice 3: settle +
+> `veil_do` + network capture** — actionable-surface settle, actionability checks
+> that refuse with a reason, a diff instead of a re-dump, and interactions that
+> teach the replay cache. Seven tools live. Still a promise: `veil_replay` and
+> its config gate.
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,

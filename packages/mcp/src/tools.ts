@@ -18,7 +18,7 @@ import { z } from "zod";
 import type { Search } from "@veil/search";
 import type { Reader } from "@veil/read";
 import type { SessionPool } from "@veil/core";
-import { renderSearch, renderRead, renderPull, renderOpen, renderQuery, renderSessions } from "./format.js";
+import { renderSearch, renderRead, renderPull, renderOpen, renderQuery, renderSessions, renderAct } from "./format.js";
 
 export interface VeilDeps {
   search: Search;
@@ -148,6 +148,38 @@ export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
       guard(async () => {
         const res = pool.query(session, { role, name, fires, limit });
         return text(renderQuery(session, res));
+      }),
+  );
+
+  server.registerTool(
+    "veil_do",
+    {
+      title: "Act on the page",
+      description:
+        "Click, type into, or otherwise act on an element of an open session, using the id from " +
+        "veil_open or veil_query (e.g. 'button-sign-in'). Returns what CHANGED — new or vanished " +
+        "actions, navigation, and any request the action fired. If the element can't be acted on " +
+        "(hidden, disabled, covered by something) you get told which, so pick another element or " +
+        "act on what's blocking it rather than retrying.",
+      inputSchema: {
+        session: z.string().describe("Session id from veil_open."),
+        node: z.string().describe("Element id, e.g. 'button-sign-in'."),
+        action: z
+          .enum(["click", "type", "clear", "select", "focus", "hover", "check"])
+          .describe("What to do."),
+        value: z.string().optional().describe("Text to type, or the option to select."),
+      },
+    },
+    ({ session, node, action, value }) =>
+      guard(async () => {
+        if (action === "type" && value === undefined) {
+          return text("[BAD_ARGS] action=type needs `value` — the text to type.");
+        }
+        if (action === "select" && value === undefined) {
+          return text("[BAD_ARGS] action=select needs `value` — the option to select.");
+        }
+        const res = await pool.act(session, node, { kind: action, value });
+        return text(renderAct(node, action, res));
       }),
   );
 

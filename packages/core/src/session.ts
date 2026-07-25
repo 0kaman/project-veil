@@ -19,9 +19,13 @@ import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { createCDPClient, type CDPClient } from "./browser/cdp-client.js";
 import { renderPage, type SettleOptions } from "./browser/page.js";
 import { browserTreeRssMb } from "./browser/memory.js";
+import { awaitSettle, settleConfig, type SettleResult } from "./browser/settle.js";
+import { dispatchAction, type Action, type ActionFailure } from "./browser/interact.js";
+import { NetworkRecorder, pickPrimary, type CapturedRequest } from "./browser/capture.js";
 import { buildGraph } from "./graph/build.js";
 import { projectLean } from "./graph/project.js";
 import { queryNodes, type NodeFilter, type QueryResult } from "./graph/query.js";
+import { diffGraphs, isNoOp, type GraphDiff } from "./graph/diff.js";
 import type { BehaviorGraph } from "./graph/model.js";
 import { debugLog } from "./debug.js";
 
@@ -33,6 +37,26 @@ export interface Session {
   graph: BehaviorGraph;
   createdAt: number;
   lastUsed: number;
+  /** Records what interactions fire — the replay cache's raw material. */
+  recorder: NetworkRecorder;
+  /** Replay templates, keyed by stable display id. SESSION state, not graph
+   * state: it survives every rebuild (DECISIONS 2026-07-25). */
+  replay: Map<string, CapturedRequest>;
+}
+
+export interface ActResult {
+  ok: boolean;
+  ms: number;
+  /** Set when the action itself couldn't be performed. */
+  failure?: ActionFailure | "gone";
+  detail?: string;
+  settle?: SettleResult;
+  diff?: GraphDiff;
+  /** What the interaction fired, if anything survived ambient filtering. */
+  fired?: { method: string; url: string; status?: number };
+  /** True when this taught the replay cache a new template. */
+  learnedReplay?: boolean;
+  noOp?: boolean;
 }
 
 /** Why a session is no longer available — reported, never silent. */
@@ -75,10 +99,17 @@ export class SessionPool {
   private seq = 0;
   private readonly opts: Required<Pick<PoolOptions, "budgetMb" | "idleMs" | "maxSessions">>;
   private readonly settle: SettleOptions;
+  /** Settle overrides, forwarded to awaitSettle. */
+  private readonly settleOver: { quietMs?: number; capMs?: number; longLivedMs?: number };
 
   constructor(options: PoolOptions = {}) {
     const { budgetMb, idleMs, maxSessions, ...settle } = options;
     this.settle = settle;
+    this.settleOver = {
+      ...(settle.quietMs !== undefined && { quietMs: settle.quietMs }),
+      ...(settle.capMs !== undefined && { capMs: settle.capMs }),
+      ...(settle.longLivedMs !== undefined && { longLivedMs: settle.longLivedMs }),
+    };
     this.opts = {
       budgetMb: budgetMb ?? envNum("VEIL_MEMORY_BUDGET_MB", 3000),
       idleMs: idleMs ?? envNum("VEIL_SESSION_IDLE_MS", 30 * 60_000),
@@ -122,18 +153,33 @@ export class SessionPool {
       client = await createCDPClient(`ws://127.0.0.1:${browser.port}/devtools/page/${targetId}`);
       await client.send("DOM.enable");
       await client.send("Accessibility.enable");
+      await client.send("Network.enable");
+
+      // Attach the recorder BEFORE navigating. The baseline is only as good as
+      // what we've observed: attaching after settle meant zero requests had been
+      // seen, so the first ambient poll after an action looked novel and got
+      // misattributed to it. Load-time traffic IS the ambient baseline.
+      const recorder = new NetworkRecorder(client);
+      recorder.attach();
 
       const page = await renderPage(client, url, this.settle);
       if (page.errorText) {
+        recorder.detach();
         client.close();
         await this.closeTarget(browser, targetId);
         return { ok: false, ms: Date.now() - t0, error: page.errorText, evicted };
       }
       await client.send("DOM.getDocument", { depth: -1 });
 
+      // The page has loaded; now wait for the ACTIONABLE SURFACE to hold still
+      // before perceiving it, so the graph isn't a snapshot of a half-built page.
+      await awaitSettle(client, settleConfig(this.settleOver));
+
       const { graph } = await buildGraph(client);
       const id = `s${++this.seq}`;
       const now = Date.now();
+      // Everything the page fired while loading and settling is ambient.
+      recorder.markBaseline();
       this.sessions.set(id, {
         id,
         url: page.finalUrl,
@@ -142,6 +188,8 @@ export class SessionPool {
         graph,
         createdAt: now,
         lastUsed: now,
+        recorder,
+        replay: new Map(),
       });
 
       return {
@@ -157,6 +205,99 @@ export class SessionPool {
       if (targetId) await this.closeTarget(browser, targetId);
       return { ok: false, ms: Date.now() - t0, error: msg(err), evicted };
     }
+  }
+
+  /**
+   * Act on a node: dispatch → settle → rebuild → diff. Never throws; an action
+   * that can't be performed comes back as a receipt with the reason.
+   */
+  async act(sessionId: string, nodeId: string, action: Action): Promise<ActResult> {
+    const t0 = Date.now();
+    const s = this.sessions.get(sessionId);
+    if (!s) {
+      return {
+        ok: false,
+        ms: Date.now() - t0,
+        failure: "gone",
+        detail: `session ${sessionId} is gone (${this.goneReason(sessionId)}) — re-open the page`,
+      };
+    }
+    s.lastUsed = Date.now();
+
+    const node = s.graph.nodes.get(nodeId);
+    if (!node || node.backendNodeId === undefined) {
+      // Offer the closest thing we do have, rather than a bare failure.
+      const near = [...s.graph.nodes.keys()]
+        .filter((k) => k.includes(nodeId.split("-")[0] ?? ""))
+        .slice(0, 3);
+      return {
+        ok: false,
+        ms: Date.now() - t0,
+        failure: "not-found",
+        detail:
+          `no node "${nodeId}" on this page` +
+          (near.length ? ` — did you mean ${near.join(", ")}?` : " — use veil_query to find one"),
+      };
+    }
+
+    const before = s.graph;
+    // Anything already in flight is ambient; only what starts now is ours.
+    s.recorder.markBaseline();
+    const firedAfter = Date.now();
+
+    const dispatched = await dispatchAction(s.client, node.backendNodeId, action);
+    if (!dispatched.ok) {
+      return {
+        ok: false,
+        ms: Date.now() - t0,
+        failure: dispatched.failure,
+        detail: dispatched.detail,
+      };
+    }
+
+    const settle = await awaitSettle(s.client, settleConfig(this.settleOver));
+
+    // Full rebuild — always. Cheap relative to settle, and structurally cannot
+    // go stale (v1's incremental path produced stale request shapes that then
+    // fed replay: a confidently wrong ACTION).
+    let after = before;
+    try {
+      await s.client.send("DOM.getDocument", { depth: -1 });
+      after = (await buildGraph(s.client)).graph;
+      s.graph = after;
+      s.url = after.meta.url;
+    } catch (err) {
+      debugLog("act: rebuild failed", err);
+    }
+
+    // What did it fire? Teach the replay cache if this is new.
+    const fired = pickPrimary(s.recorder.since(firedAfter));
+    let learnedReplay = false;
+    if (fired) {
+      if (!s.replay.has(nodeId)) {
+        s.replay.set(nodeId, fired);
+        learnedReplay = true;
+      }
+      const n = s.graph.nodes.get(nodeId);
+      if (n) {
+        n.fires = `${fired.method} ${shortUrl(fired.url)}`;
+        n.replayable = true;
+      }
+    }
+    s.recorder.prune();
+
+    const diff = diffGraphs(before, after);
+    return {
+      ok: true,
+      ms: Date.now() - t0,
+      settle,
+      diff,
+      ...(fired && {
+        fired: { method: fired.method, url: shortUrl(fired.url), status: fired.status },
+      }),
+      learnedReplay,
+      noOp: isNoOp(diff) && !fired,
+    };
   }
 
   /** Query a session's host-side graph. Zero browser cost — it's a filter. */
@@ -195,6 +336,7 @@ export class SessionPool {
     this.sessions.delete(sessionId);
     this.gone.set(sessionId, reason);
     try {
+      s.recorder.detach();
       s.client.close();
     } catch {
       /* already gone */
@@ -271,4 +413,15 @@ export class SessionPool {
 
 function msg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Path + a bounded query string — a full analytics URL is 400 chars of noise. */
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const q = u.search.length > 48 ? u.search.slice(0, 47) + "…" : u.search;
+    return u.pathname + q;
+  } catch {
+    return url.slice(0, 80);
+  }
 }
