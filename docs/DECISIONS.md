@@ -61,6 +61,18 @@
 
 ## Open / scoped future work
 
+- **`TOKENISH` matches more than CSRF.** The regex includes `state$` (OAuth) and
+  `nonce`. Those are single-use in a *different* sense: refreshing an OAuth
+  `state` from the live page mid-flow would BREAK the flow, not repair it. Not
+  live today — the `safe` default blocks the mutations that would carry them, and
+  no probe has touched an auth redirect. Revisit before `replay: all` is pointed
+  at one.
+- **`liveTokens` reads only `meta` and `input[type=hidden]`.** An app holding its
+  token in a JS-readable cookie or a module variable yields `{}`, refresh silently
+  no-ops, and you land in the first residual. The receipt cannot currently tell
+  `refreshed: []` = "nothing needed refreshing" from `refreshed: []` = "couldn't
+  find the token" — and by the no-silent-degradation rule those should read
+  differently.
 - **The DOM half of the settle cap.** Still 12s per action on animated pages. Needs
   a different model (perceive immediately, update incrementally), not a bigger cap.
 - **The doorman beats headless too.** Cloudflare fingerprints headless Chrome.
