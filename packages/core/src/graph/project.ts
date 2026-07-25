@@ -29,7 +29,9 @@ function line(n: BehaviorNode): string {
   const value = n.value ? ` =${JSON.stringify(n.value)}` : "";
   const fires = n.fires ? `  → ${n.fires}` : "";
   const delegated = !n.fires && n.events.some((e) => e.delegated) ? "  → (delegated handler)" : "";
-  return `  ${n.id} [${n.role}]${name}${value}${stateSuffix(n)}${fires}${delegated}`;
+  // Name the verb, not just the effect — there is no button to click here.
+  const how = n.submitOnly ? `  (action:"submit")` : "";
+  return `  ${n.id} [${n.role}]${name}${value}${stateSuffix(n)}${fires}${how}${delegated}`;
 }
 
 export function projectLean(graph: BehaviorGraph, opts: ProjectOptions = {}): string {

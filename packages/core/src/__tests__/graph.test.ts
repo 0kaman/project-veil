@@ -85,6 +85,27 @@ describe("projectLean", () => {
     expect(out).toMatch(/nothing on this page is actionable/);
   });
 
+  it("names the VERB on a node that can only be sent with Enter", () => {
+    // A live model was handed Hacker News' search box and reported "the missing
+    // capability is a submit action on the textbox" — while action:"submit" sat
+    // in the veil_do enum it had been given. It decides what to do from the
+    // graph, not from the tool schema, so the affordance belongs on the node.
+    const out = projectLean(
+      graph([node({ id: "textbox", role: "textbox", fires: "GET //hn.algolia.com/", submitOnly: true })]),
+    );
+    expect(out).toMatch(/\(action:"submit"\)/);
+  });
+
+  it("stays quiet when a button already reaches the same target", () => {
+    const out = projectLean(
+      graph([
+        node({ id: "textbox-user", role: "textbox", name: "User", fires: "POST /session" }),
+        node({ id: "button-sign-in", role: "button", name: "Sign in", fires: "POST /session" }),
+      ]),
+    );
+    expect(out).not.toMatch(/action:"submit"/);
+  });
+
   it("marks a delegated handler when there is no known effect", () => {
     const out = projectLean(
       graph([node({ id: "button-x", role: "button", name: "X", events: [{ type: "click", category: "unknown", delegated: true }] })]),

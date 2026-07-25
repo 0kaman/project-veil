@@ -100,6 +100,31 @@ suite("behavior graph — real Chrome (Layer 2)", () => {
     }
   }, 90_000);
 
+  it("advertises submit ONLY where there is no button to click", async () => {
+    // The fixture holds both shapes: a /session form WITH a Sign in button, and
+    // a button-less /find form. The advice must appear on exactly one of them —
+    // useless advice on six login fields is how a receipt becomes noise.
+    const r = new Renderer();
+    try {
+      const p = await r.perceive(`${base}/login`);
+      expect(p.ok).toBe(true);
+      if (!p.ok) return;
+
+      const nodes = [...p.graph.nodes.values()];
+      const bare = nodes.find((n) => !n.name && n.role === "textbox")!;
+      const login = nodes.find((n) => n.id === "textbox-username")!;
+
+      expect(bare.submitOnly).toBe(true); // no button in that form
+      expect(login.submitOnly).toBeFalsy(); // button-sign-in covers POST /session
+
+      // and it reaches the agent
+      expect(p.lean).toMatch(new RegExp(`${bare.id} .*action:"submit"`));
+      expect(p.lean).not.toMatch(/textbox-username.*action:"submit"/);
+    } finally {
+      await r.close();
+    }
+  });
+
   it("recovers what the submit button fires WITHOUT a direct listener (the moat)", async () => {
     const r = new Renderer();
     try {

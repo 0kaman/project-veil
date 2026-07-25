@@ -11,7 +11,7 @@
 import type { CDPClient } from "../browser/cdp-client.js";
 import { buildFromAXTree } from "../pipeline/stage-1-axtree.js";
 import { enrichWithEvents, type Stage2Stats } from "../pipeline/stage-2-events.js";
-import { DOER_ROLES, routeOf, type BehaviorGraph } from "./model.js";
+import { CLICKABLE, DOER_ROLES, routeOf, type BehaviorGraph } from "./model.js";
 
 export interface BuildResult {
   graph: BehaviorGraph;
@@ -57,6 +57,24 @@ export async function buildGraph(client: CDPClient): Promise<BuildResult> {
       doers.push(n.id);
     } else {
       links.push(n.id);
+    }
+  }
+
+  // Which targets can already be reached by CLICKING something? A form with a
+  // submit button needs no advice on its fields; a form without one does.
+  const covered = new Set<string>();
+  for (const id of doers) {
+    const n = map.get(id);
+    if (n?.fires && CLICKABLE.has(n.role)) covered.add(n.fires);
+  }
+  for (const id of doers) {
+    const n = map.get(id)!;
+    if (
+      !CLICKABLE.has(n.role) &&
+      n.events.some((e) => e.category === "form_submit") &&
+      !(n.fires && covered.has(n.fires))
+    ) {
+      n.submitOnly = true;
     }
   }
 

@@ -84,7 +84,10 @@ export function renderOpen(r: OpenResult): string {
 function nodeLine(n: BehaviorNode): string {
   const state = Object.entries(n.state);
   const st = state.length ? ` {${state.map(([k, v]) => (v === true ? k : `${k}:${v}`)).join(", ")}}` : "";
-  return `  ${n.id} [${n.role}]${n.name ? ` "${n.name}"` : ""}${st}${n.fires ? `  → ${n.fires}` : ""}`;
+  // Same affordance as the lean view: veil_query is often where the model looks
+  // for something to act on, so the verb has to be here too.
+  const how = n.submitOnly ? `  (action:"submit")` : "";
+  return `  ${n.id} [${n.role}]${n.name ? ` "${n.name}"` : ""}${st}${n.fires ? `  → ${n.fires}` : ""}${how}`;
 }
 
 export function renderQuery(session: string, res: QueryResult | { gone: GoneReason }): string {

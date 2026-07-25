@@ -14,6 +14,10 @@
 /** AX roles that a user can act ON — "doers". Deliberately excludes `link`:
  * a link is navigation, and navigation is what veil_search/veil_read are for.
  * Measured: on wikipedia this is the difference between 1,031 nodes and 23. */
+/** Roles you act on by CLICKING. If one of these already reaches a target, the
+ * fields feeding it need no "press Enter" advice — the button is the obvious move. */
+export const CLICKABLE = new Set(["button", "menuitem", "tab", "link"]);
+
 export const DOER_ROLES = new Set([
   "button",
   "textbox",
@@ -75,6 +79,11 @@ export interface BehaviorNode {
   fires?: string;
   /** True when a replayable request template exists for this node. */
   replayable?: boolean;
+  /** This node submits a form and NOTHING clickable reaches the same target —
+   * so pressing Enter (`veil_do action:"submit"`) is the only way to send it.
+   * Carried on the node because an agent decides what to do from the GRAPH, not
+   * from the tool schema (DECISIONS 2026-07-26). */
+  submitOnly?: boolean;
 }
 
 export interface GraphMeta {
