@@ -106,6 +106,8 @@ export interface ReplayOutcome {
   /** Fields the caller changed, by name — the receipt reports what differs
    * from the captured original. One sighting is not a schema. */
   edited: string[];
+  /** Edits naming a field the captured request never had — see Prepared. */
+  unknownEdits: string[];
   /** Token VALUES this request carried, so the session can keep its ledger:
    * these WORKED on success, and are confirmed SPENT if later rejected. */
   tokensSent: string[];
@@ -165,6 +167,13 @@ export interface Prepared {
   body?: string;
   refreshed: string[];
   edited: string[];
+  /** Edits whose key the CAPTURED request never had. Almost always a mistake —
+   * either the wrong template or a guessed field name — and the server usually
+   * ignores it, so the reply is a 200 that did nothing you asked for. Measured:
+   * a replay edited `search=` onto Wikipedia's cirrus-config-dump endpoint and
+   * got `{"warnings":{"main":"Unrecognized parameter: search."}}` behind a
+   * cheerful `200`. Silence there is the failure this project designs out. */
+  unknownEdits: string[];
 }
 
 /**
@@ -211,6 +220,7 @@ export function applyEdits(
 ): Prepared {
   const refreshed: string[] = [];
   const edited: string[] = [];
+  const unknownEdits: string[] = [];
 
   // ── URL + query ──────────────────────────────────────────────────────────
   let url = tmpl.url;
@@ -224,9 +234,11 @@ export function applyEdits(
         refreshed.push(`query:${key}`);
       }
     }
+    const hadQuery = new Set(u.searchParams.keys());
     for (const [k, v] of Object.entries(edits?.query ?? {})) {
       u.searchParams.set(k, v);
       edited.push(`query:${k}`);
+      if (!hadQuery.has(k)) unknownEdits.push(`query:${k}`);
     }
     url = u.toString();
   } catch {
@@ -244,9 +256,11 @@ export function applyEdits(
       refreshed.push(`header:${key}`);
     }
   }
+  const hadHeader = new Set(Object.keys(headers).map((k) => k.toLowerCase()));
   for (const [k, v] of Object.entries(edits?.headers ?? {})) {
     headers[k] = v;
     edited.push(`header:${k}`);
+    if (!hadHeader.has(k.toLowerCase())) unknownEdits.push(`header:${k}`);
   }
 
   // ── body ─────────────────────────────────────────────────────────────────
@@ -263,9 +277,11 @@ export function applyEdits(
             refreshed.push(`body:${key}`);
           }
         }
+        const hadKey = new Set(Object.keys(parsed));
         for (const [k, v] of Object.entries(edits?.body ?? {})) {
           parsed[k] = v;
           edited.push(`body:${k}`);
+          if (!hadKey.has(k)) unknownEdits.push(`body:${k}`);
         }
         body = JSON.stringify(parsed);
       } catch {
@@ -281,9 +297,11 @@ export function applyEdits(
           refreshed.push(`body:${key}`);
         }
       }
+      const hadField = new Set(params.keys());
       for (const [k, v] of Object.entries(edits?.body ?? {})) {
         params.set(k, typeof v === "string" ? v : JSON.stringify(v));
         edited.push(`body:${k}`);
+        if (!hadField.has(k)) unknownEdits.push(`body:${k}`);
       }
       body = params.toString();
     }
@@ -296,7 +314,7 @@ export function applyEdits(
     }
   }
 
-  return { url, headers, body, refreshed, edited };
+  return { url, headers, body, refreshed, edited, unknownEdits };
 }
 
 /** Headers the browser refuses to let fetch() set. */
@@ -372,6 +390,7 @@ export async function replayRequest(
     url: prepared.url,
     refreshed: prepared.refreshed,
     edited: prepared.edited,
+    unknownEdits: prepared.unknownEdits,
     tokensSent,
   };
 

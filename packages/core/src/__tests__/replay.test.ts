@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { gateReplay, loadConfig } from "../config.js";
 import { applyEdits, tokenValues } from "../browser/replay.js";
-import type { CapturedRequest } from "../browser/capture.js";
+import { pickPrimary, type CapturedRequest } from "../browser/capture.js";
 
 const tmpl = (over: Partial<CapturedRequest> = {}): CapturedRequest => ({
   requestId: "1",
@@ -169,5 +169,83 @@ describe("tokenValues — what a request would spend", () => {
       {},
     );
     expect(tokenValues(p)).toEqual(["AT"]);
+  });
+});
+
+describe("pickPrimary — which fired request did the interaction MEAN?", () => {
+  const req = (over: Partial<CapturedRequest>): CapturedRequest => ({
+    requestId: "x", method: "GET", url: "https://x.test/", headers: {}, startedAt: 0, ...over,
+  });
+  // The real Wikipedia burst, in the order Chrome reported it.
+  const wikipedia = [
+    req({ url: "https://en.wikipedia.org/w/api.php?action=cirrus-config-dump&prop=usertesting" }),
+    req({ url: "https://en.wikipedia.org/w/rest.php/v1/search/title?q=behaviour+graph&limit=10" }),
+  ];
+
+  it("prefers the request CARRYING the typed value over the one that merely fired first", () => {
+    expect(pickPrimary(wikipedia, "behaviour graph")!.url).toContain("search/title");
+  });
+
+  it("decodes before matching — a typed space travels as + or %20", () => {
+    expect(pickPrimary(wikipedia, "behaviour graph")!.url).toContain("q=behaviour+graph");
+    const pct = [req({ url: "https://x.test/a" }), req({ url: "https://x.test/s?q=hello%20world" })];
+    expect(pickPrimary(pct, "hello world")!.url).toContain("q=hello");
+  });
+
+  it("finds the value in a POST body too", () => {
+    const reqs = [
+      req({ url: "https://x.test/beacon" }),
+      req({ method: "POST", url: "https://x.test/search", postData: '{"q":"behaviour graph"}' }),
+    ];
+    expect(pickPrimary(reqs, "behaviour graph")!.url).toContain("/search");
+  });
+
+  it("leaves CLICKS exactly as they were — no value, no change in behaviour", () => {
+    // The path already verified on real sites (POST /post, GET /reply): mutations
+    // first, then arrival order. Threading a value must not disturb it.
+    expect(pickPrimary(wikipedia)!.url).toContain("cirrus-config-dump");
+    const mixed = [req({ url: "https://x.test/a" }), req({ method: "POST", url: "https://x.test/b" })];
+    expect(pickPrimary(mixed)!.url).toBe("https://x.test/b");
+    expect(pickPrimary(mixed, "nothing matches this")!.url).toBe("https://x.test/b");
+  });
+
+  it("falls back to arrival order when nothing carries the value", () => {
+    expect(pickPrimary(wikipedia, "unrelated")!.url).toContain("cirrus-config-dump");
+    expect(pickPrimary([], "x")).toBeUndefined();
+  });
+});
+
+describe("applyEdits — an edit naming a field the request never had", () => {
+  it("flags a query param that is not in the captured URL", () => {
+    // The measured case: `search=` edited onto cirrus-config-dump, which answered
+    // 200 with "Unrecognized parameter: search".
+    const p = applyEdits(tmpl({ url: "https://x.test/api?action=dump" }), { query: { search: "x" } }, {});
+    expect(p.unknownEdits).toContain("query:search");
+    expect(p.edited).toContain("query:search"); // still applied — we report, not refuse
+  });
+
+  it("stays silent when the param WAS in the captured request", () => {
+    const p = applyEdits(tmpl({ url: "https://x.test/api?q=old" }), { query: { q: "new" } }, {});
+    expect(p.unknownEdits).toEqual([]);
+  });
+
+  it("flags an unknown JSON body field, and not a known one", () => {
+    const p = applyEdits(tmpl(), { body: { qty: 9, nonesuch: 1 } }, {});
+    expect(p.unknownEdits).toEqual(["body:nonesuch"]);
+  });
+
+  it("flags an unknown form field", () => {
+    const p = applyEdits(
+      tmpl({ headers: { "content-type": "application/x-www-form-urlencoded" }, postData: "q=hi" }),
+      { body: { page: "2" } },
+      {},
+    );
+    expect(p.unknownEdits).toEqual(["body:page"]);
+  });
+
+  it("matches headers case-insensitively before calling one unknown", () => {
+    const p = applyEdits(tmpl({ headers: { "Content-Type": "application/json" } }),
+      { headers: { "content-type": "text/plain" } }, {});
+    expect(p.unknownEdits).toEqual([]);
   });
 });

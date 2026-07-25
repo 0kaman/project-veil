@@ -44,11 +44,17 @@ export async function buildGraph(client: CDPClient): Promise<BuildResult> {
   const doers: string[] = [];
   const links: string[] = [];
   for (const n of nodes) {
-    // Unnamed doers are unaddressable in practice — an agent cannot refer to
-    // "the third unnamed textbox" meaningfully — so they're counted but not
-    // surfaced. Named-ness is the addressability test.
+    // The addressability test is the ROLE, not the name. Requiring a name was
+    // measured wrong (DECISIONS 2026-07-25): Hacker News' site search is an
+    // unlabelled textbox, so the front page reported "nothing on this page is
+    // actionable" while holding a node that fires GET //hn.algolia.com/. A live
+    // model read that receipt and concluded, correctly and uselessly, that it
+    // was stuck. Unnamed nodes ARE addressable — ids are stable and deduped
+    // (`textbox`, `textbox-2`) and `fires` describes them. Cost is ~1 node:
+    // measured 0 unnamed doers on httpbin's 16-control form, github/login and
+    // a wikipedia article; 1 on HN.
     if (DOER_ROLES.has(n.role)) {
-      if (n.name) doers.push(n.id);
+      doers.push(n.id);
     } else {
       links.push(n.id);
     }

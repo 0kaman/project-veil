@@ -126,9 +126,45 @@ export class NetworkRecorder {
 
 /** Pick the request most worth reporting/replaying: a mutation beats a GET. */
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-export function pickPrimary(reqs: CapturedRequest[]): CapturedRequest | undefined {
+
+/** Does this request carry the text the user typed? Compared DECODED, because a
+ * typed "behaviour graph" travels as `behaviour+graph` or `behaviour%20graph`
+ * and a raw compare silently never matches. */
+function carriesValue(r: CapturedRequest, value: string): boolean {
+  const needle = value.trim().toLowerCase();
+  if (!needle) return false;
+  const decode = (s: string): string => {
+    try {
+      return decodeURIComponent(s.replace(/\+/g, " ")).toLowerCase();
+    } catch {
+      return s.toLowerCase();
+    }
+  };
+  return decode(r.url).includes(needle) || (r.postData ? decode(r.postData).includes(needle) : false);
+}
+
+/**
+ * Which of the requests an interaction fired is THE one it meant?
+ *
+ * Arrival order alone is wrong, measured: typing into Wikipedia's search box
+ * fires `api.php?action=cirrus-config-dump` (telemetry) BEFORE
+ * `rest.php/v1/search/title?q=behaviour+graph` (the search). First-wins learned
+ * the telemetry call, and a later replay edited `search=` onto an endpoint with
+ * no such parameter — the server replied "Unrecognized parameter: search" while
+ * our receipt reported a clean 200.
+ *
+ * So when the action carried a VALUE, prefer the request carrying that value.
+ * That is evidence, not a guess. Clicks have no value and are unaffected — they
+ * keep mutations-first-then-arrival, the path already verified on real sites
+ * (`POST /post` on httpbin, `GET /reply` on HN).
+ */
+export function pickPrimary(reqs: CapturedRequest[], value?: string): CapturedRequest | undefined {
   if (reqs.length === 0) return undefined;
   const mutations = reqs.filter((r) => MUTATING.has(r.method));
   const pool = mutations.length > 0 ? mutations : reqs;
+  if (value) {
+    const carrying = pool.filter((r) => carriesValue(r, value));
+    if (carrying.length > 0) return carrying[0];
+  }
   return pool[0];
 }

@@ -26,6 +26,9 @@ const PAGE = `<!doctype html><html><head><title>Sign in — Fixture</title></hea
   <button disabled aria-label="Locked">Locked</button>
   <a href="/signup">Create an account</a>
   <a href="/reset">Forgot password?</a>
+  <!-- Hacker News' shape: a site-search input with NO label of any kind, inside a
+       form that GETs. It is unnamed but it is the only way to search the page. -->
+  <form action="/find" method="GET"><input name="q"></form>
   <script>document.getElementById('js').addEventListener('click', function(){});</script>
 </body></html>`;
 
@@ -68,6 +71,34 @@ suite("behavior graph — real Chrome (Layer 2)", () => {
       await r.close();
     }
   });
+
+  it("surfaces an UNNAMED control — the role is the addressability test, not the name", async () => {
+    // Regression: requiring a name hid Hacker News' site search, so the front
+    // page reported "nothing on this page is actionable" while holding a node
+    // that fires GET //hn.algolia.com/. A live model read that and reported
+    // itself stuck. Ids are stable and `fires` describes the node, so an unnamed
+    // control is perfectly addressable.
+    const r = new Renderer();
+    try {
+      const p = await r.perceive(`${base}/login`);
+      expect(p.ok).toBe(true);
+      if (!p.ok) return;
+
+      const unnamed = [...p.graph.nodes.values()].filter((n) => !n.name && n.role !== "link");
+      expect(unnamed.length).toBeGreaterThan(0);
+      const q = unnamed[0]!;
+
+      // it is a DOER, not filed away as navigation
+      expect(p.graph.doers).toContain(q.id);
+      // we know what it does, which is what makes it addressable
+      expect(q.fires).toMatch(/find/);
+      // and it reaches the agent, not just the graph
+      expect(p.lean).toContain(q.id);
+      expect(p.lean).not.toMatch(/nothing on this page is actionable/);
+    } finally {
+      await r.close();
+    }
+  }, 90_000);
 
   it("recovers what the submit button fires WITHOUT a direct listener (the moat)", async () => {
     const r = new Renderer();

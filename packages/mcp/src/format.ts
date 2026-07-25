@@ -168,6 +168,16 @@ export function renderReplay(node: string, r: ReplayResult): string {
   // the caller sees exactly what was substituted and what they changed.
   if (r.refreshed?.length) parts.push(`refreshed from the live page: ${r.refreshed.join(", ")}`);
   if (r.edited?.length) parts.push(`your edits: ${r.edited.join(", ")}`);
+  // An edit naming a field the captured request never had is almost always the
+  // wrong template or a guessed name — and the server tends to IGNORE it and
+  // still answer 200, so without this the receipt reads as success.
+  if (r.unknownEdits?.length) {
+    parts.push(
+      `warning: ${r.unknownEdits.join(", ")} — not present in the captured request. ` +
+        `The server will most likely ignore these. Check you are replaying the right ` +
+        `node, or use veil_do to perform the action for real.`,
+    );
+  }
 
   // The specific diagnosis when we have one: this token worked before and has
   // now been rejected, so it was single-use and the page is stuck holding it.

@@ -290,7 +290,8 @@ export class SessionPool {
     }
 
     // What did it fire? Teach the replay cache if this is new.
-    const fired = pickPrimary(s.recorder.since(firedAfter));
+    // Pass the typed value: it identifies WHICH of the fired requests was meant.
+    const fired = pickPrimary(s.recorder.since(firedAfter), action.value);
     let learnedReplay = false;
     if (fired) {
       if (!s.replay.has(nodeId)) {
