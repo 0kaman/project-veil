@@ -66,7 +66,7 @@ Each rung is tried before the one below it. Costs are measured, not estimated.
 | **SEARCH** | Brave API | ~200ms · ~900 tok | always first |
 | **READ** | fetch → parse → extract | ~630ms · ~3k tok/page | a snippet isn't enough |
 | **ACT** | Chrome + CDP + AX tree | ~2–4s · 969MB | you must click, type, or learn behaviour |
-| **REPLAY** | captured request template | ~1–2ms | you've acted here once before |
+| **REPLAY** | captured request template | **~6ms** (measured; 330ms for the click it replaces) | you've acted here once before |
 
 Search snippets are 40–68 words each; ten results is ~583 tokens of real prose
 and **often answers the question outright**. v1's research session took 104.3s

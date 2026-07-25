@@ -367,9 +367,11 @@ export class SessionPool {
     // Keep the ledger on SERVER evidence only. A success means the value worked
     // — not that it is used up, since a session-scoped token works every time.
     // A value is spent only once rejected after it had previously worked.
+    // `desynced` already encodes the full evidence test (unedited + a rejection
+    // of a previously-working value). Reusing it keeps one rule, not two.
     for (const t of outcome.tokensSent) {
       if (outcome.ok) s.tokens.worked.add(t);
-      else if (s.tokens.worked.has(t)) s.tokens.spent.add(t);
+      else if (outcome.desynced) s.tokens.spent.add(t);
     }
     const detail = outcome.desynced
       ? `that token worked before and the server has now rejected it, so it was ` +

@@ -62,9 +62,25 @@ suite("replay — real Chrome (Layer 2)", () => {
           } catch {
             /* ignore */
           }
-          const ok = tok === REUSABLE; // accepted every time — no consumption
-          res.writeHead(ok ? 200 : 403, { "content-type": "application/json" });
-          res.end(JSON.stringify({ ok }));
+          if (tok !== REUSABLE) {
+            res.writeHead(403, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, why: "bad token" }));
+            return;
+          }
+          // Token is FINE; Rails-style 422 for an ordinary bad field value.
+          let qty = 1;
+          try {
+            qty = Number((JSON.parse(body) as { qty?: unknown }).qty ?? 1);
+          } catch {
+            /* ignore */
+          }
+          if (qty <= 0) {
+            res.writeHead(422, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: "quantity must be positive" }));
+            return;
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
         });
         return;
       }
@@ -283,6 +299,34 @@ suite("replay — real Chrome (Layer 2)", () => {
         expect(r.response?.status).toBe(200); // and it really fired
         expect(r.desynced).toBeFalsy(); // nothing is out of step
       }
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("does not read an ordinary VALIDATION failure as a spent token", async () => {
+    // Third instance of the same mistake class: treating a signal that isn't
+    // about the token as evidence about the token. A Rails-style 422 on a
+    // payload WE edited marked a valid session token spent, and the next clean
+    // replay — which returns 200 — was refused without firing. The guard is
+    // structural (did we change the payload?), not a phrase match, so it holds
+    // in any language.
+    const pool = new SessionPool({ capMs: 4000, config: { replay: "all" } });
+    try {
+      const open = await pool.open(`${base}/reusable`);
+      await pool.act(open.sessionId!, "button-add-to-cart", { kind: "click" });
+
+      expect((await pool.replay(open.sessionId!, "button-add-to-cart")).response?.status).toBe(200);
+
+      // rejected because qty is bad — the token was never in question
+      const bad = await pool.replay(open.sessionId!, "button-add-to-cart", { body: { qty: 0 } });
+      expect(bad.response?.status).toBe(422);
+      expect(bad.desynced).toBeFalsy();
+
+      // so a clean replay must still fire
+      const after = await pool.replay(open.sessionId!, "button-add-to-cart");
+      expect(after.refusal).toBeUndefined();
+      expect(after.response?.status).toBe(200);
     } finally {
       await pool.shutdown();
     }

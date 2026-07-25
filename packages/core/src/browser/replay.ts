@@ -50,14 +50,25 @@
  * server, that cut reported `desynced` on a replay that broke nothing, then
  * refused replays #2 and #3 which would each have returned 200.
  *
- * So a token counts as spent only on evidence the SERVER supplied:
- *   - AFTER a rejection (401/403/419/422) of a token that PREVIOUSLY WORKED in
- *     this session, that value is confirmed one-shot and now spent. If the page
- *     still holds it, the page is genuinely desynchronized — say so.
+ * So a token counts as spent only on evidence the SERVER supplied, and only when
+ * that evidence is actually ABOUT the token:
+ *   - the replay carried NO caller edits. A 403/422 on a payload we changed is
+ *     evidence about the payload, not the token. Measured: a Rails-style 422
+ *     ("quantity must be positive") on an edited replay marked a perfectly valid
+ *     session token spent, and the next clean replay — which returns 200 — was
+ *     refused without firing. This guard is structural, not a phrase match, so it
+ *     holds in any language.
+ *   - AND the status is a rejection (401/403/419/422) of a value that PREVIOUSLY
+ *     WORKED in this session. Then it is confirmed one-shot and now spent; if the
+ *     page still holds it, the page is genuinely desynchronized — say so.
  *   - BEFORE firing, refuse only when every token we would send is in that
  *     confirmed-spent set.
- * Cost: one wasted 403 per single-use node, instead of zero. That is honest, and
- * far cheaper than breaking repeat replay on two schemes out of three.
+ *
+ * Cost: one wasted 403 per single-use node, instead of zero. RESIDUAL: an
+ * UNEDITED replay rejected for a reason that isn't the token (stock gone, rate
+ * limit) is still read as a spent token, costing a false refusal. That is the
+ * cheap direction — the recovery it names, re-perceive or veil_do, is the right
+ * move anyway when the server starts rejecting a request that used to work.
  */
 import type { CDPClient } from "./cdp-client.js";
 import type { CapturedRequest } from "./capture.js";
@@ -382,13 +393,15 @@ export async function replayRequest(
   try {
     const response = await fireRequest(client, tmpl.method, prepared);
     const ok = response.status >= 200 && response.status < 400;
-    // Desync is claimed ONLY on server evidence: a token that worked before has
-    // now been rejected, and the page is still holding it. A success proves
-    // nothing — a reusable token looks identical.
+    // Desync is claimed ONLY on server evidence that is about the TOKEN: an
+    // unedited request whose previously-working token was rejected, with the page
+    // still holding it. A success proves nothing (a reusable token looks
+    // identical), and a rejected edit proves nothing about the token.
     let desynced: boolean | undefined;
     if (
       !ok &&
       TOKEN_REJECTED.has(response.status) &&
+      prepared.edited.length === 0 && // a rejected EDIT indicts the edit, not the token
       ledger &&
       tokensSent.some((v) => ledger.worked.has(v))
     ) {

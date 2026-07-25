@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.integration.json",
+    "bench:replay": "node bench/replay-benchmark.mjs",
     "clean": "rm -rf dist"
   },
   "engines": {
