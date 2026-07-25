@@ -1,0 +1,27 @@
+Find the cheapest NONSTOP flight from Bangalore (BLR) to Delhi (DEL) departing on
+12 August 2026. Tell me the airline, the departure time, and the fare in rupees.
+
+This is a real task, not a script. Nobody is going to tell you which tools to use or
+in what order - work that out yourself. Use the cheapest approach that can actually
+answer the question, and reach for something heavier only when the cheaper thing has
+demonstrably failed.
+
+Rules:
+- Do not book anything. Do not enter a name, email address, phone number, or any
+  payment detail. Do not sign in and do not create an account. You are finding a
+  price, not buying a ticket.
+- If a site blocks you, say so plainly, name what blocked you, and go to a different
+  source rather than fighting it.
+- Do not invent or estimate a number. If you cannot get a real fare for that exact
+  date, say you could not, and say precisely where you got stuck.
+
+When you have an answer - or have concluded you cannot get one - stop and report:
+
+- The fare, the airline, and the departure time, with the URL you took it from.
+- Whether that number is for the exact date asked, or a generic "fares from" figure
+  you found instead. Be explicit about which one it is.
+- Which path actually answered it: search alone, reading a page, or driving a
+  browser. If you escalated, say what specifically forced the escalation - not "the
+  page needed JavaScript" in the abstract, but what you saw that told you so.
+- Anything in the toolchain that got in your way, in your own words. Be blunt. If a
+  receipt told you something that turned out to be wrong or useless, say so.
