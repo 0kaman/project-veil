@@ -169,12 +169,12 @@ export function renderReplay(node: string, r: ReplayResult): string {
   if (r.refreshed?.length) parts.push(`refreshed from the live page: ${r.refreshed.join(", ")}`);
   if (r.edited?.length) parts.push(`your edits: ${r.edited.join(", ")}`);
 
-  // A SUCCESSFUL replay can still leave the page broken: it spends a single-use
-  // token without completing the app's rotation handshake. Measured, not assumed
-  // — so say it, or the agent's next click fails for no visible reason.
-  if (r.desynced) parts.push(`note: ${r.detail}`);
-
-  if (resp && resp.status === 403) {
+  // The specific diagnosis when we have one: this token worked before and has
+  // now been rejected, so it was single-use and the page is stuck holding it.
+  // Otherwise fall back to the generic rejection note — never both.
+  if (r.desynced) {
+    parts.push(`note: ${r.detail}`);
+  } else if (resp && resp.status === 403) {
     parts.push(
       "note: rejected. A one-shot token may already be spent — re-read the page " +
         "(veil_open/veil_query) or use veil_do to perform it for real. Do not retry this as-is.",

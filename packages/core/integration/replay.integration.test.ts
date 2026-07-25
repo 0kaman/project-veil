@@ -20,6 +20,7 @@ suite("replay — real Chrome (Layer 2)", () => {
   let server: Server;
   let base: string;
   let currentToken = "";
+  const REUSABLE = "session-scoped-token-never-rotates";
   const consumed = new Set<string>();
   let carts: string[] = [];
 
@@ -51,6 +52,22 @@ suite("replay — real Chrome (Layer 2)", () => {
         });
         return;
       }
+      if (req.method === "POST" && url.startsWith("/reuse-api/")) {
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          let tok = "";
+          try {
+            tok = (JSON.parse(body) as { csrf_token?: string }).csrf_token ?? "";
+          } catch {
+            /* ignore */
+          }
+          const ok = tok === REUSABLE; // accepted every time — no consumption
+          res.writeHead(ok ? 200 : 403, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok }));
+        });
+        return;
+      }
       if (url.startsWith("/api/")) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, path: url }));
@@ -59,6 +76,24 @@ suite("replay — real Chrome (Layer 2)", () => {
       // Assets must NOT mint a token. Chrome requests /favicon.ico on every
       // page load; treating that as a render rotated the token behind the
       // page's back and 403'd every click. (Cost me a debugging round.)
+      // SESSION-SCOPED token: valid forever, never consumed, never rotated —
+      // Django/Rails, i.e. the COMMON case. The fixture only had the single-use
+      // scheme, which is why nothing caught the over-eager spent-token refusal.
+      if (url.startsWith("/reusable")) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(`<!doctype html><html><head><title>Shop</title>
+          <meta name="csrf-token" content="${REUSABLE}"></head><body>
+          <button id="add" aria-label="Add to cart">Add to cart</button>
+          <script>
+            document.getElementById('add').addEventListener('click', function(){
+              fetch('/reuse-api/cart', { method:'POST',
+                headers:{'content-type':'application/json'},
+                body: JSON.stringify({ sku:'A1', qty:1,
+                  csrf_token: document.querySelector('meta[name=csrf-token]').content }) });
+            });
+          </script></body></html>`);
+        return;
+      }
       if (url.startsWith("/favicon") || /\.(ico|png|css|js|map)$/.test(url)) {
         res.writeHead(404);
         res.end();
@@ -209,17 +244,45 @@ suite("replay — real Chrome (Layer 2)", () => {
 
       const first = await pool.replay(open.sessionId!, "button-add-to-cart");
       expect(first.response?.status).toBe(200);
-      // it consumed the token and the page never picked up the successor
-      expect(first.desynced).toBe(true);
-      expect(first.detail).toMatch(/out of step with the server/);
+      // NOT desynced yet: a success is not evidence. A session-scoped token
+      // looks identical at this point, and claiming desync here was the bug.
+      expect(first.desynced).toBeFalsy();
 
-      // A second replay would send the very same, now-spent token. Refuse before
-      // firing: a refusal names the recovery, a 403 does not.
+      // The second replay re-sends it and the SERVER rejects it — that is the
+      // evidence. Now we know it was one-shot, and that the page still holds it.
       const second = await pool.replay(open.sessionId!, "button-add-to-cart");
-      expect(second.ok).toBe(false);
-      expect(second.refusal).toBe("stale-token");
-      expect(second.detail).toMatch(/veil_do|veil_open/);
-      expect(second.response).toBeUndefined(); // nothing left the browser
+      expect(second.response?.status).toBe(403);
+      expect(second.desynced).toBe(true);
+      expect(second.detail).toMatch(/out of step with the server/);
+
+      // Only NOW may we refuse before firing — the value is confirmed spent.
+      const third = await pool.replay(open.sessionId!, "button-add-to-cart");
+      expect(third.ok).toBe(false);
+      expect(third.refusal).toBe("stale-token");
+      expect(third.detail).toMatch(/veil_do|veil_open/);
+      expect(third.response).toBeUndefined(); // nothing left the browser
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("REPEAT-replays a reusable token — a success is not evidence of spending", async () => {
+    // The regression the first cut shipped: it marked a token spent because the
+    // replay SUCCEEDED, and read "page still holds it" as desync. On a
+    // session-scoped token (Django/Rails — two of the three schemes, and the
+    // common ones) the page holds it because it is STILL VALID. That cut
+    // reported a false desync and then refused replays #2 and #3, each of which
+    // returns 200 here.
+    const pool = new SessionPool({ capMs: 4000, config: { replay: "all" } });
+    try {
+      const open = await pool.open(`${base}/reusable`);
+      await pool.act(open.sessionId!, "button-add-to-cart", { kind: "click" });
+      for (let i = 0; i < 3; i++) {
+        const r = await pool.replay(open.sessionId!, "button-add-to-cart");
+        expect(r.refusal).toBeUndefined(); // never refused
+        expect(r.response?.status).toBe(200); // and it really fired
+        expect(r.desynced).toBeFalsy(); // nothing is out of step
+      }
     } finally {
       await pool.shutdown();
     }

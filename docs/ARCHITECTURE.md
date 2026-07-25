@@ -25,7 +25,9 @@
 > fixture, one act+replay per fresh session: median click **330ms → replay 6ms
 > (~55×)** — not v1's 121×, a different measurement against a trivial server.
 > Replay also reports the desync it causes on single-use-token pages, and refuses
-> to re-spend a token it already burned (DECISIONS 2026-07-25). **Eight tools
+> to re-spend a token the server has confirmed is burned — on server evidence
+> only, never inferred from a success, or it breaks the reusable-token schemes
+> Django and Rails use (DECISIONS 2026-07-25 + its same-day amendment). **Eight tools
 > live — the act path is complete.**
 >
 > The rule: this file describes what the code **actually does**, not what we

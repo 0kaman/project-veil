@@ -39,12 +39,25 @@
  *
  * Handled by measurement, never by guessing at response shapes (writing an
  * app-specific `nextToken` back into the DOM is exactly the inference this
- * project refuses):
- *   - BEFORE firing, refuse if every token we would send is one a previous
- *     replay already consumed in this session.
- *   - AFTER firing, re-read the page. If it still holds the token we just
- *     spent, the app did not rotate it and the page is now desynchronized —
- *     report that in the receipt so the agent re-perceives instead of retrying.
+ * project refuses).
+ *
+ * CRUCIALLY, the evidence runs the other way round. The first cut of this marked
+ * a token spent because a replay SUCCEEDED, and inferred desync from "the page
+ * still holds the value we sent". That inference is invalid, and the probe table
+ * above says why: on session-scoped and rotating schemes — two of the three, and
+ * the common ones (Django, Rails) — the page holds the same token because it is
+ * STILL VALID, not because we burned it. Measured against a reusable-token
+ * server, that cut reported `desynced` on a replay that broke nothing, then
+ * refused replays #2 and #3 which would each have returned 200.
+ *
+ * So a token counts as spent only on evidence the SERVER supplied:
+ *   - AFTER a rejection (401/403/419/422) of a token that PREVIOUSLY WORKED in
+ *     this session, that value is confirmed one-shot and now spent. If the page
+ *     still holds it, the page is genuinely desynchronized — say so.
+ *   - BEFORE firing, refuse only when every token we would send is in that
+ *     confirmed-spent set.
+ * Cost: one wasted 403 per single-use node, instead of zero. That is honest, and
+ * far cheaper than breaking repeat replay on two schemes out of three.
  */
 import type { CDPClient } from "./cdp-client.js";
 import type { CapturedRequest } from "./capture.js";
@@ -82,12 +95,12 @@ export interface ReplayOutcome {
   /** Fields the caller changed, by name — the receipt reports what differs
    * from the captured original. One sighting is not a schema. */
   edited: string[];
-  /** Token VALUES this request carried. On success the caller records them as
-   * consumed, so a later replay can refuse to re-send a spent one. */
+  /** Token VALUES this request carried, so the session can keep its ledger:
+   * these WORKED on success, and are confirmed SPENT if later rejected. */
   tokensSent: string[];
-  /** Measured after a successful fire: the page still holds a token this replay
-   * consumed, so the page is now out of step with the server and real clicks
-   * will fail until it re-renders. */
+  /** Confirmed by a REJECTION of a token that previously worked, with the page
+   * still holding it: the page is out of step with the server, so real clicks
+   * fail too until it re-renders. Never inferred from a success. */
   desynced?: boolean;
   /** Set when we declined to fire because every token would be known-spent. */
   staleRefusal?: string;
@@ -321,12 +334,22 @@ export async function fireRequest(
   return JSON.parse(r.result.value) as ReplayResponse;
 }
 
+/** Statuses a framework uses to reject a CSRF token (Laravel 419, Rails 422). */
+const TOKEN_REJECTED = new Set([401, 403, 419, 422]);
+
+/** What this session has learned about token values, from the server only. */
+export interface TokenLedger {
+  /** Values a replay has successfully sent. Not proof of anything on its own. */
+  worked: ReadonlySet<string>;
+  /** Values rejected AFTER having worked — confirmed one-shot, and now spent. */
+  spent: ReadonlySet<string>;
+}
+
 export async function replayRequest(
   client: CDPClient,
   tmpl: CapturedRequest,
   edits?: ReplayEdits,
-  /** Token values consumed by earlier replays in this session. */
-  spent?: ReadonlySet<string>,
+  ledger?: TokenLedger,
 ): Promise<ReplayOutcome> {
   const t0 = Date.now();
   const tokens = await liveTokens(client);
@@ -341,10 +364,10 @@ export async function replayRequest(
     tokensSent,
   };
 
-  // Every token this would carry is one an earlier replay already spent — the
-  // page never rotated it, so firing is a guaranteed rejection. Refusing costs
-  // nothing and, unlike a 403, names the recovery.
-  if (tokensSent.length > 0 && spent && tokensSent.every((v) => spent.has(v))) {
+  // Every token this would carry is one the SERVER has already rejected after it
+  // worked — confirmed one-shot and spent, so firing is a guaranteed rejection.
+  // Refusing costs nothing and, unlike a 403, names the recovery.
+  if (tokensSent.length > 0 && ledger && tokensSent.every((v) => ledger.spent.has(v))) {
     return {
       ...base,
       ok: false,
@@ -359,13 +382,19 @@ export async function replayRequest(
   try {
     const response = await fireRequest(client, tmpl.method, prepared);
     const ok = response.status >= 200 && response.status < 400;
-    // Did the app rotate the token we just consumed? Re-read and find out —
-    // this is measured, not assumed from the response body's shape.
+    // Desync is claimed ONLY on server evidence: a token that worked before has
+    // now been rejected, and the page is still holding it. A success proves
+    // nothing — a reusable token looks identical.
     let desynced: boolean | undefined;
-    if (ok && tokensSent.length > 0) {
+    if (
+      !ok &&
+      TOKEN_REJECTED.has(response.status) &&
+      ledger &&
+      tokensSent.some((v) => ledger.worked.has(v))
+    ) {
       const held = new Set(Object.values(await liveTokens(client)));
-      desynced = tokensSent.some((v) => held.has(v));
-      if (desynced) debugLog("replay: page still holds a token this replay consumed");
+      desynced = tokensSent.some((v) => ledger.worked.has(v) && held.has(v));
+      if (desynced) debugLog("replay: page holds a token the server has now rejected");
     }
     return { ...base, ok, ms: Date.now() - t0, response, ...(desynced && { desynced }) };
   } catch (err) {

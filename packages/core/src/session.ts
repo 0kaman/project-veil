@@ -44,10 +44,10 @@ export interface Session {
   /** Replay templates, keyed by stable display id. SESSION state, not graph
    * state: it survives every rebuild (DECISIONS 2026-07-25). */
   replay: Map<string, CapturedRequest>;
-  /** Token values consumed by replays here. Replay spends a single-use token
-   * without completing the app's rotation handshake, so we must remember what
-   * we burned — see browser/replay.ts, "the second residual". */
-  spentTokens: Set<string>;
+  /** What the SERVER has taught us about token values here. `worked` alone
+   * proves nothing (a reusable token works every time); a value only moves to
+   * `spent` once rejected AFTER having worked. See browser/replay.ts. */
+  tokens: { worked: Set<string>; spent: Set<string> };
 }
 
 export interface ActResult {
@@ -208,7 +208,7 @@ export class SessionPool {
         lastUsed: now,
         recorder,
         replay: new Map(),
-        spentTokens: new Set(),
+        tokens: { worked: new Set(), spent: new Set() },
       });
 
       return {
@@ -360,16 +360,21 @@ export class SessionPool {
       return { ok: false, ms: Date.now() - t0, refusal: "gated", detail: verdict.reason };
     }
 
-    const outcome = await replayRequest(s.client, tmpl, edits, s.spentTokens);
+    const outcome = await replayRequest(s.client, tmpl, edits, s.tokens);
     if (outcome.staleRefusal) {
       return { ok: false, ms: Date.now() - t0, refusal: "stale-token", detail: outcome.staleRefusal };
     }
-    // Only a SUCCESS consumes a token; a rejection means the server kept it.
-    if (outcome.ok) for (const t of outcome.tokensSent) s.spentTokens.add(t);
+    // Keep the ledger on SERVER evidence only. A success means the value worked
+    // — not that it is used up, since a session-scoped token works every time.
+    // A value is spent only once rejected after it had previously worked.
+    for (const t of outcome.tokensSent) {
+      if (outcome.ok) s.tokens.worked.add(t);
+      else if (s.tokens.worked.has(t)) s.tokens.spent.add(t);
+    }
     const detail = outcome.desynced
-      ? `this replay consumed a single-use token and the page still holds it — the ` +
-        `page is now out of step with the server, so further clicks on this node will ` +
-        `fail. Re-perceive (veil_open) before acting on it again.`
+      ? `that token worked before and the server has now rejected it, so it was ` +
+        `single-use — and the page still holds it. The page is out of step with the ` +
+        `server: real clicks on this node will fail too. Re-perceive (veil_open).`
       : undefined;
     return { ...outcome, ms: Date.now() - t0, ...(detail && { detail }) };
   }
