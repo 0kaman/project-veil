@@ -75,6 +75,9 @@ export class AgentSession {
 
   async send(userText: string): Promise<void> {
     const { tracer, mcp, llm, gate, ui, maxSteps } = this.deps;
+    // Trace the turn VERBATIM before anything can transform it — this is the
+    // record that makes "did it get the whole prompt?" answerable.
+    tracer.emit({ kind: "user", step: this.step + 1, chars: userText.length, text: userText });
     this.messages.push({ role: "user", content: userText });
     this.aborted = false;
 

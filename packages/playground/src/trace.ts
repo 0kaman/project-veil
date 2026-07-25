@@ -22,6 +22,11 @@ export interface ToolCallRef {
 export type TraceBody =
   | { kind: "run.start"; goal: string; model: string; traceFile: string }
   | { kind: "mcp.connect"; ms: number; tools: string[] }
+  /** The user's turn, IN FULL. Recorded because a run that skipped two thirds of
+   * a 16-step script could not be diagnosed without it: there was no way to tell
+   * "the model ignored the instructions" from "the terminal mangled the paste".
+   * `chars` is kept alongside so a truncation shows up at a glance. */
+  | { kind: "user"; step: number; chars: number; text: string }
   | { kind: "mcp.stderr"; line: string }
   | { kind: "llm.request"; step: number; model: string; messages: number }
   | {
