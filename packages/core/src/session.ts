@@ -176,6 +176,19 @@ export class SessionPool {
       await client.send("DOM.enable");
       await client.send("Accessibility.enable");
       await client.send("Network.enable");
+      // Every session is "the front tab" as far as its agent is concerned, but
+      // only one Chrome tab really is. An occluded renderer produces no frames,
+      // and Input.dispatchMouseEvent waits on a compositor ack that therefore
+      // never comes — measured at a flat 5,467ms per mouse event on a
+      // backgrounded tab against 235ms on the foreground one, while focus/type
+      // (no Input domain) stayed at ~470ms. Focus emulation makes the page
+      // believe it is frontmost without actually switching tabs, which would
+      // serialise the very concurrency the pool exists to provide.
+      try {
+        await client.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+      } catch (err) {
+        debugLog("focus emulation unavailable — mouse input on background tabs will be slow", err);
+      }
 
       // Attach the recorder BEFORE navigating. The baseline is only as good as
       // what we've observed: attaching after settle meant zero requests had been

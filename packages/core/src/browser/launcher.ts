@@ -63,6 +63,12 @@ export async function launchBrowser(options?: LaunchOptions): Promise<BrowserHan
     "--disable-sync",
     "--metrics-recording-only",
     "--disable-blink-features=AutomationControlled",
+    // Chrome suspends requestAnimationFrame and throttles timers in tabs that
+    // are not in front. We hold SEVERAL sessions at once and every one of them
+    // is "in front" as far as an agent is concerned. Measured before these were
+    // added: acting on a backgrounded tab took 30,003ms and failed with a CDP
+    // timeout, because the actionability check awaits two rAFs that never came;
+    // the same act on the sole open tab took 230ms.
     "--window-size=1920,1080",
     "about:blank",
     `--user-data-dir=${userDataDir}`,

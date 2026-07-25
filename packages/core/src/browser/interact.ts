@@ -68,7 +68,18 @@ const ACTIONABLE_FN = `async function() {
     el.scrollIntoView({ block:'center', inline:'center', behavior:'instant' });
 
     var b1 = box(el);
-    await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
+    // Two frames to see whether the element is still moving — but NEVER wait on
+    // rAF alone. It is suspended outright in a backgrounded tab, and this runs
+    // awaited over CDP, so a frame that never comes became a 30s timeout and a
+    // dispatch-failed. Focus emulation (session.ts) is what actually keeps the
+    // frames coming; this guards the branch where enabling it throws, where the
+    // cost of being wrong is a 30s hang rather than a slow call.
+    await new Promise(function(r){
+      var done = false;
+      var fin = function(){ if (!done) { done = true; r(); } };
+      requestAnimationFrame(function(){ requestAnimationFrame(fin); });
+      setTimeout(fin, 250);
+    });
     var b2 = box(el);
     if (b2.w === 0 || b2.h === 0) {
       var cs = getComputedStyle(el);

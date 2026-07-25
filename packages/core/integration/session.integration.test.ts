@@ -109,6 +109,31 @@ suite("session pool — real Chrome (Layer 2)", () => {
     }
   }, 90_000);
 
+  it("acts on a BACKGROUNDED session as fast as the foreground one", async () => {
+    // Measured: with several sessions open, a click on a non-foreground tab took
+    // 30,003ms and failed with a CDP timeout — the actionability check awaits
+    // rAF, which an occluded renderer never fires. Fixing that left mouse input
+    // at a flat 5,467ms, because Input.dispatchMouseEvent waits on a compositor
+    // ack that also never comes. Focus emulation is what fixes both; the three
+    // launcher flags I first reached for changed nothing and were removed.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const first = await pool.open(`${base}/one`);
+      const solo = await pool.act(first.sessionId!, "button-go-one", { kind: "click" });
+      expect(solo.ok).toBe(true);
+
+      // push it behind three others
+      for (let i = 0; i < 3; i++) await pool.open(`${base}/other${i}`);
+
+      const bg = await pool.act(first.sessionId!, "button-go-one", { kind: "click" });
+      expect(bg.ok).toBe(true);
+      // the regression was 30s, then 5.4s — anything near either is the bug back
+      expect(bg.ms).toBeLessThan(3000);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
   it("a session OUTLIVES the open call — the graph stays queryable", async () => {
     const pool = new SessionPool();
     try {
