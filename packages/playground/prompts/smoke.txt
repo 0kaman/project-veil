@@ -1,0 +1,89 @@
+You are running a full smoke test of a browser toolchain. There are fourteen steps.
+Work through every one, in order. Do not skip a step. Do not batch steps together.
+Do not stop when something fails - write down exactly what failed and continue to the
+next step. If you genuinely cannot complete a step, say in plain words what is
+missing and move on rather than retrying the same call.
+
+For every step, quote the tool's first line - the one starting "via:" - exactly as it
+came back, before you say anything about it. If a tool refuses or errors, quote the
+entire message, then say in one sentence what you understand it wants you to do
+instead, and whether that instruction was clear enough to act on without guessing.
+
+1. What year did the Hubble Space Telescope launch? Use the cheapest tool that can
+settle it and stop there. State explicitly whether search alone was enough, and say
+which tool you deliberately did not reach for.
+
+2. Fetch the full text of https://en.wikipedia.org/wiki/HTTP. Report the word count,
+whether it was cut short, and the handle you were given.
+
+3. Using only that handle, without fetching the page again, pull out the part about
+status codes. Report how many paragraphs matched, and how long this took compared
+with step 2.
+
+4. Read https://www.reddit.com/r/programming/. Report which path the receipt says was
+used, whether that differs from step 2, and explain in one line why the two pages
+were served differently.
+
+5. Open https://httpbin.org/forms/post as a browser session. Report the session id
+and list every action the page exposes. If httpbin.org does not respond, use
+https://httpbin.io/forms/post and say that you switched.
+
+6. Fill that form in. Customer name "Veil Smoke Test", telephone 555-0100, email
+smoke@example.invalid, choose the medium pizza size, tick the bacon topping, and put
+"automated perception test, please ignore" in the delivery instructions box. Do these
+one action at a time, and after each one report what the receipt says changed.
+
+7. Submit the form. Report the settle time and reason, exactly which request fired and
+what status came back, whether the graph says the interaction was learned as
+replayable, and what the page shows now.
+
+8. Try to fire that same submission again through the replay path, changing the
+customer name to "Veil Smoke Test 2". Quote exactly what comes back. If it is refused,
+say precisely what the refusal is telling you and whether you could act on it without
+guessing anything.
+
+9. Do whatever step 8's response told you to do, and report whether it worked. Do not
+skip this step - it is the whole point of step 8.
+
+10. Open https://en.wikipedia.org/wiki/Main_Page as a second session. Report the
+actions found, and whether opening it cost any existing session its place.
+
+11. Type "behaviour graph" into the Wikipedia search box. Report the exact and
+complete URL of the request that fired, and whether it was learned as replayable.
+Then say whether that URL looks like a search endpoint or like something else
+entirely.
+
+12. Re-fire that request through the replay path with the search term changed to
+"accessibility tree". Report how long it took against step 11, what was refreshed
+from the live page as opposed to what you deliberately changed, whether anything was
+flagged as not present in the captured request, and what the response actually
+contained. Say whether the response is about your new search term or the old one.
+
+13. Replay it once more, but this time set a query parameter named "search" to the
+value "oops". Report exactly what the receipt says about that parameter, and whether
+the response gives any sign that it took effect.
+
+14. Open https://news.ycombinator.com as a third session. Report how many actions it
+exposes and list them in full. Then try to search Hacker News for "chrome devtools
+protocol" using only what that page gives you. If you cannot complete the search, say
+precisely which capability is missing - name the thing you needed and could not do -
+and move on. Do not retry the same call more than once.
+
+15. Call veil_do on a node id that does not exist, "button-does-not-exist", in one
+session only. Quote the error exactly.
+
+16. List every open session with its age and memory. Then close them all, try to use
+one of the closed ones, and quote what comes back.
+
+Finish with a plain written summary. No tables. One line per step: what you called,
+what the receipt said, and whether it did what you expected. Then answer these three
+questions directly:
+  - Was any receipt misleading, and if so which one?
+  - Which step was hardest to recover from, and why?
+  - What are the three things you would most want fixed, worst first?
+
+Rules. Never enter a real credential, never sign in, never create an account. The
+only POSTs you may make are to httpbin, which exists to receive test posts, and to
+ordinary search boxes. Do not post, comment, vote, or submit anything on Hacker News,
+Wikipedia, or any other real site, even if the page offers it. If a step would need
+you to sign in, stop and report that instead of continuing.
