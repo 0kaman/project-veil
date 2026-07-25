@@ -416,6 +416,31 @@ export class SessionPool {
     };
   }
 
+  /**
+   * The live document of an open session, as HTML.
+   *
+   * The graph is behaviour, deliberately — but after an agent has ACTED, the
+   * answer it was after is prose, and that prose exists nowhere else. Measured:
+   * an agent drove a flight search to a results page, called veil_read with the
+   * session id, and got FETCH-FAILED; re-fetching the URL would have discarded
+   * the form state that produced the results. So the session has to be readable.
+   */
+  async html(sessionId: string): Promise<{ html: string; url: string } | { gone: GoneReason }> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return { gone: this.gone.get(sessionId) ?? "unknown" };
+    s.lastUsed = Date.now();
+    try {
+      const r = (await s.client.send("Runtime.evaluate", {
+        expression: "document.documentElement.outerHTML",
+        returnByValue: true,
+      })) as { result?: { value?: string } };
+      return { html: r.result?.value ?? "", url: s.url };
+    } catch (err) {
+      debugLog("session.html failed", err);
+      return { html: "", url: s.url };
+    }
+  }
+
   /** Query a session's host-side graph. Zero browser cost — it's a filter. */
   query(sessionId: string, filter: NodeFilter): QueryResult | { gone: GoneReason } {
     const s = this.sessions.get(sessionId);

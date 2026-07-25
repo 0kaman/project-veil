@@ -70,6 +70,12 @@ Each rung is tried before the one below it. Costs are measured, not estimated.
 | **ACT** | Chrome + CDP + AX tree | ~2–4s · 969MB | you must click, type, or learn behaviour |
 | **REPLAY** | captured request template | **4–6ms** (measured; 235–330ms for the click it replaces) | you've acted here once before |
 
+`veil_read` also takes an **open session id**, not just a URL or a handle. After
+`veil_do` drives a form to a results page, the answer is prose that exists only in
+that tab — re-fetching the URL returns the empty form. That tier reports
+`via: session`, and is deliberately never classified `js-shell`: the JS has already
+run, so there is nothing above it to escalate to.
+
 Search snippets are 40–68 words each; ten results is ~583 tokens of real prose
 and **often answers the question outright**. v1's research session took 104.3s
 and 43,736 tokens to answer worse.

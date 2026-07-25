@@ -13,7 +13,10 @@
 
 /** How the bytes were obtained. `fetch` is the cheap path; `render` is the
  * escalation — headless Chrome ran the page's JS (via an injected renderer). */
-export type Via = "fetch" | "render";
+/** Where the bytes came from. `session` is a page an agent has already DRIVEN:
+ * its prose exists only in that live DOM, and re-fetching the URL would throw
+ * away the form state that produced it (DECISIONS 2026-07-26). */
+export type Via = "fetch" | "render" | "session";
 
 /**
  * The outcome of a read. This is the single most important field: it routes

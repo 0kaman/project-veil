@@ -24,7 +24,7 @@ export {
 } from "./extract.js";
 
 import { HandleStore } from "./handles.js";
-import { defaultConfig, performRead, type FetchLike, type ReadConfig, type ReadResult, type RenderFn } from "./read.js";
+import { defaultConfig, performRead, readHtml as extractHtml, type FetchLike, type ReadConfig, type ReadResult, type RenderFn } from "./read.js";
 import type { Pull } from "./handles.js";
 
 export interface ReaderOptions {
@@ -64,6 +64,15 @@ export class Reader {
       config: this.config,
       renderer: this.renderer,
     });
+  }
+
+  /**
+   * Read prose out of HTML the caller already has — a live session's DOM.
+   * Same extraction, same budget, same handle, so a session read is pullable
+   * exactly like a fetched one.
+   */
+  readHtml(html: string, url: string, ms = 0): ReadResult {
+    return extractHtml(html, url, { store: this.store, config: this.config, ms });
   }
 
   /**

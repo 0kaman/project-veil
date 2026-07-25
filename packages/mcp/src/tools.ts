@@ -52,6 +52,7 @@ async function guard(fn: () => Promise<TextResult>): Promise<TextResult> {
 }
 
 const HANDLE = /^r\d+$/;
+const SESSION = /^s\d+$/;
 
 export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
   server.registerTool(
@@ -80,11 +81,17 @@ export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
         "— the receipt says 'via: render' when it did. Long pages are truncated and return " +
         "a handle like 'r1'; call veil_read again with that handle plus a query to pull a " +
         "specific part. If it still says DOORMAN or 'blocked both ways', the site defeats " +
-        "even the browser — pick another source, do not retry.",
+        "even the browser — pick another source, do not retry. You can also pass an OPEN " +
+        "SESSION id (e.g. 's1') to read what that page says right now — use that after " +
+        "veil_do has driven a form to a results page, since those results exist only in " +
+        "that tab and re-reading the URL would lose them.",
       inputSchema: {
         url: z
           .string()
-          .describe("A URL to read, or a handle (e.g. 'r1') returned by a previous read."),
+          .describe(
+            "A URL to read, a handle (e.g. 'r1') from a previous read, or an open " +
+              "session id (e.g. 's1') to read the page that session is on now.",
+          ),
         query: z
           .string()
           .optional()
@@ -102,6 +109,30 @@ export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
             );
           }
           return text(renderPull(pull, url));
+        }
+        // An open session — the page an agent has already DRIVEN. Its prose is
+        // only in that tab; re-fetching the URL would throw away the state that
+        // produced it.
+        if (SESSION.test(url) && deps.sessions) {
+          const t0 = Date.now();
+          const live = await deps.sessions.html(url);
+          if ("gone" in live) {
+            return text(
+              `via: session · ${url} is gone (${live.gone}) — re-open the page with veil_open.`,
+            );
+          }
+          if (!live.html) {
+            return text(`via: session · ${url} returned no HTML — the tab may have crashed.`);
+          }
+          const r = deps.reader.readHtml(live.html, live.url, Date.now() - t0);
+          // A results page is long and the query is how the answer gets found,
+          // so honour it immediately rather than making the agent round-trip
+          // through the handle it was just given.
+          if (query && r.handle) {
+            const pull = deps.reader.more(r.handle, query);
+            if (pull) return text(`${renderRead(r).split("\n")[0]}\n${renderPull(pull, r.handle)}`);
+          }
+          return text(renderRead(r));
         }
         // A fresh read.
         return text(renderRead(await deps.reader.read(url)));

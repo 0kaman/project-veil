@@ -20,12 +20,44 @@ const PAGE = (n: string) => `<!doctype html><html><head><title>Page ${n}</title>
   <a href="/one">First link</a><a href="/two">Second link</a>
 </body></html>`;
 
+/** A search whose RESULTS exist only after the form is driven — re-fetching the
+ * URL gets you the empty form back, which is exactly why a session must be
+ * readable. */
+const SEARCH_PAGE = `<!doctype html><html><head><title>Fare search</title></head><body>
+  <input id="q" aria-label="Route">
+  <button id="go" aria-label="Search">Search</button>
+  <div id="out"></div>
+  <script>
+    // Fetched, not inlined: a literal here would sit in the script source and
+    // show up in outerHTML BEFORE the click, which made the first version of
+    // this test assert nothing at all.
+    document.getElementById('go').addEventListener('click', function(){
+      fetch('/results').then(function(r){ return r.text(); })
+        .then(function(t){ document.getElementById('out').innerHTML = t; });
+    });
+  </script></body></html>`;
+
+const RESULTS = `<article><h1>Results</h1>
+  <p>IndiGo 6E-2043 departs 06:10 and the fare is 4,812 rupees nonstop.</p>
+  <p>Air India AI-504 departs 07:45 and the fare is 6,330 rupees nonstop.</p>
+  <p>${"filler ".repeat(4200)}</p></article>`;
+
 suite("session pool — real Chrome (Layer 2)", () => {
   let server: Server;
   let base: string;
 
   beforeAll(async () => {
     server = createServer((req, res) => {
+      if ((req.url ?? "").startsWith("/results")) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(RESULTS);
+        return;
+      }
+      if ((req.url ?? "").startsWith("/search")) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(SEARCH_PAGE);
+        return;
+      }
       const n = (req.url ?? "/a").replace(/[^a-z0-9]/gi, "") || "a";
       res.writeHead(200, { "content-type": "text/html" });
       res.end(PAGE(n));
@@ -38,6 +70,44 @@ suite("session pool — real Chrome (Layer 2)", () => {
   afterAll(async () => {
     await new Promise<void>((r) => server.close(() => r()));
   });
+
+  it("READS a page it has driven — prose that exists nowhere but the tab", async () => {
+    // The failure this closes: an agent drove a flight search to a results page,
+    // called veil_read with the session id, and got FETCH-FAILED. It had the
+    // answer on screen and no way to read it. Re-fetching the URL returns the
+    // empty form, so the session is the only place the answer lives.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(`${base}/search`);
+      const before = await pool.html(open.sessionId!);
+      // nothing of the answer is on the page yet — not even in the script source
+      expect("html" in before && before.html.includes("4,812")).toBe(false);
+      expect("html" in before && before.html.includes("IndiGo")).toBe(false);
+
+      await pool.act(open.sessionId!, "button-search", { kind: "click" });
+
+      const after = await pool.html(open.sessionId!);
+      expect("html" in after).toBe(true);
+      if (!("html" in after)) return;
+      expect(after.html).toContain("IndiGo 6E-2043");
+      expect(after.html).toContain("4,812");
+      expect(after.url).toContain("/search");
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("says a closed session is gone rather than returning empty prose", async () => {
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(`${base}/search`);
+      await pool.close(open.sessionId!);
+      const r = await pool.html(open.sessionId!);
+      expect("gone" in r).toBe(true);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
 
   it("a session OUTLIVES the open call — the graph stays queryable", async () => {
     const pool = new SessionPool();

@@ -164,26 +164,38 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
   // Thin result — doorman (challenge), JS shell, or genuinely empty. The
   // stray-phrase check is deferred to here: a real article would have cleared
   // okFloor above, so "enable javascript" in a noscript can't false-flag it.
+  // A SESSION read has no rung above it. These statuses exist to route an
+  // escalation — "js-shell" means "go render it" — and a driven page has
+  // already been rendered and acted on. So a thin session page keeps its text
+  // and is flagged thin; only a genuinely blank one is empty. Discarding a terse
+  // results table because it did not clear a prose threshold would throw away
+  // the very answer the agent drove the form to get.
+  let thin: string | undefined;
   if (words < config.okFloor) {
-    let status: Receipt["status"];
-    let note: string;
-    if (CHALLENGE.test(html.slice(0, 6000))) {
-      status = "doorman";
-      note = "bot challenge — server refused";
-    } else if (rawWords < 200 && hasScripts(html)) {
-      status = "js-shell";
-      note = "no content in the HTML — it's behind JavaScript";
+    const challenged = CHALLENGE.test(html.slice(0, 6000));
+    if (via === "session" && !challenged && words > 0) {
+      thin = `thin page (${words} words) — this is the live tab, there is nothing further to escalate to`;
     } else {
-      status = "empty";
-      note = `almost no readable text (${rawWords} raw words)`;
+      let status: Receipt["status"];
+      let note: string;
+      if (challenged) {
+        status = "doorman";
+        note = "bot challenge — server refused";
+      } else if (via !== "session" && rawWords < 200 && hasScripts(html)) {
+        status = "js-shell";
+        note = "no content in the HTML — it's behind JavaScript";
+      } else {
+        status = "empty";
+        note = `almost no readable text (${rawWords} raw words)`;
+      }
+      return {
+        receipt: base({ rawWords, status, extractor: "none", note }),
+        title,
+        text: "",
+        outline: [],
+        handle: null,
+      };
     }
-    return {
-      receipt: base({ rawWords, status, extractor: "none", note }),
-      title,
-      text: "",
-      outline: [],
-      handle: null,
-    };
   }
 
   // A real read. Apply the budget; store a handle only if we truncated.
@@ -200,7 +212,7 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
     handle = store.put({ url: finalUrl, title, fullText: text, outline });
   }
   const note =
-    totalWords < config.cleanWords ? `short page (${totalWords} words) — may be a stub` : undefined;
+    thin ?? (totalWords < config.cleanWords ? `short page (${totalWords} words) — may be a stub` : undefined);
 
   return {
     receipt: base({ status: "ok", extractor, words, totalWords, rawWords, truncated, note }),
@@ -209,6 +221,25 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
     outline,
     handle,
   };
+}
+
+/**
+ * Extract prose from HTML we already hold — no fetch, no render.
+ *
+ * The path that made this necessary: an agent drove a booking form to a results
+ * page, then called veil_read with the SESSION id, and got FETCH-FAILED. It had
+ * the answer on screen and no way to read it. Re-fetching the URL is not a
+ * substitute: the results exist only because of the form state in that tab.
+ */
+export function readHtml(
+  html: string,
+  url: string,
+  deps: { store: HandleStore; config: ReadConfig; ms: number },
+): ReadResult {
+  return classifyHtml({
+    url, finalUrl: url, httpStatus: 200, via: "session",
+    ms: deps.ms, html, store: deps.store, config: deps.config,
+  });
 }
 
 export async function performRead(

@@ -171,3 +171,66 @@ describe("read — escalation to a renderer", () => {
     expect(r.receipt.note).toMatch(/blocked both ways/i);
   });
 });
+
+describe("readHtml — prose out of HTML we already hold", () => {
+  const page = (body: string) =>
+    `<!doctype html><html><head><title>Fare search</title></head><body>${body}</body></html>`;
+
+  it("extracts from a driven page and reports via: session", () => {
+    // The gap this closes: an agent drove a search to a results page, called
+    // veil_read with the session id, and got FETCH-FAILED — it had the answer on
+    // screen and no way to read it.
+    const r = new Reader().readHtml(
+      page("<article><h1>Results</h1><p>IndiGo 6E-2043 departs 06:10, fare 4,812 rupees.</p></article>"),
+      "https://fares.test/search",
+    );
+    expect(r.receipt.via).toBe("session");
+    expect(r.receipt.status).toBe("ok");
+    expect(r.text).toContain("6E-2043");
+    expect(r.text).toContain("4,812");
+  });
+
+  it("truncates and issues a handle, so a long results page is pullable", () => {
+    const long = `<article><h1>R</h1><p>IndiGo 6E-2043 fare 4,812 rupees.</p><p>${"filler ".repeat(6000)}</p></article>`;
+    const reader = new Reader();
+    const r = reader.readHtml(page(long), "https://fares.test/search");
+    expect(r.receipt.truncated).toBe(true);
+    expect(r.handle).toBeTruthy();
+
+    // and the handle searches WITHIN the driven page — no network, no re-drive
+    const pull = reader.more(r.handle!, "IndiGo");
+    expect(pull!.text).toContain("6E-2043");
+  });
+
+  it("does not pretend an empty tab said something", () => {
+    const r = new Reader().readHtml(page(""), "https://fares.test/search");
+    expect(r.receipt.status).not.toBe("ok");
+  });
+});
+
+describe("a session read has no rung above it", () => {
+  const page = (b: string) =>
+    `<!doctype html><html><head><title>T</title><script>var x=1</script></head><body>${b}</body></html>`;
+
+  it("KEEPS a thin driven page's text instead of calling it empty", () => {
+    // A flight results row is terse. Discarding it for failing a prose threshold
+    // would throw away the answer the agent drove the form to get.
+    const r = new Reader().readHtml(page("<p>IndiGo 6E-2043 06:10 — 4,812 rupees</p>"), "https://f.test/s");
+    expect(r.text).toContain("4,812");
+    expect(r.receipt.note).toMatch(/nothing further to escalate/);
+  });
+
+  it("never says js-shell about a page whose JS has already run", () => {
+    const r = new Reader().readHtml(page("<p>tiny</p>"), "https://f.test/s");
+    expect(r.receipt.status).not.toBe("js-shell");
+  });
+
+  it("still reports a bot challenge, which IS actionable — pick another source", () => {
+    const r = new Reader().readHtml(page("<p>Please enable JavaScript and cookies to continue</p>"), "https://f.test/s");
+    expect(r.receipt.status).toBe("doorman");
+  });
+
+  it("a genuinely blank tab is still empty", () => {
+    expect(new Reader().readHtml(page(""), "https://f.test/s").receipt.status).toBe("empty");
+  });
+});
