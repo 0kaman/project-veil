@@ -70,6 +70,10 @@ export interface ReplayResult extends Partial<ReplayOutcome> {
   ms: number;
   /** Set when we refused before firing: no template, gone session, or the gate. */
   refusal?: "gone" | "no-template" | "gated" | "stale-token";
+  /** The node whose request this is has left the page — usually because the
+   * interaction that taught us the template navigated away from it. Every
+   * "use veil_do instead" hint is UNREACHABLE while this is true. */
+  nodeGone?: boolean;
   detail?: string;
 }
 
@@ -354,16 +358,41 @@ export class SessionPool {
       };
     }
 
+    // Every refusal below points at veil_do. Check FIRST whether veil_do could
+    // actually run: the replay cache is keyed by node id and survives
+    // navigation, so a template happily outlives the node that taught it.
+    // Measured — a live agent was told "use veil_do to perform it for real"
+    // after submitting a form, did exactly that, and got NOT-FOUND, because the
+    // submit had navigated to the response page. Advice that cannot be followed
+    // is worse than no advice.
+    const nodeGone = !s.graph.nodes.has(nodeId);
+    const reopen = nodeGone
+      ? ` NOTE: "${nodeId}" is no longer on this page — it is now at ${s.url}. ` +
+        `veil_open the original page again first, then veil_do; the node id will be there.`
+      : "";
+
     // The gate, checked again HERE and not only at tool registration: config at
     // startup is not the same thing as config at the moment a request leaves.
     const verdict = gateReplay(this.config, tmpl.method, tmpl.url);
     if (!verdict.allowed) {
-      return { ok: false, ms: Date.now() - t0, refusal: "gated", detail: verdict.reason };
+      return {
+        ok: false,
+        ms: Date.now() - t0,
+        refusal: "gated",
+        ...(nodeGone && { nodeGone }),
+        detail: (verdict.reason ?? "") + reopen,
+      };
     }
 
     const outcome = await replayRequest(s.client, tmpl, edits, s.tokens);
     if (outcome.staleRefusal) {
-      return { ok: false, ms: Date.now() - t0, refusal: "stale-token", detail: outcome.staleRefusal };
+      return {
+        ok: false,
+        ms: Date.now() - t0,
+        refusal: "stale-token",
+        ...(nodeGone && { nodeGone }),
+        detail: outcome.staleRefusal + reopen,
+      };
     }
     // Keep the ledger on SERVER evidence only. A success means the value worked
     // — not that it is used up, since a session-scoped token works every time.
@@ -379,7 +408,12 @@ export class SessionPool {
         `single-use — and the page still holds it. The page is out of step with the ` +
         `server: real clicks on this node will fail too. Re-perceive (veil_open).`
       : undefined;
-    return { ...outcome, ms: Date.now() - t0, ...(detail && { detail }) };
+    return {
+      ...outcome,
+      ms: Date.now() - t0,
+      ...(nodeGone && { nodeGone }),
+      ...(detail && { detail: detail + reopen }),
+    };
   }
 
   /** Query a session's host-side graph. Zero browser cost — it's a filter. */

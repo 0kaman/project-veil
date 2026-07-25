@@ -15,7 +15,15 @@
 import type { CDPClient } from "./cdp-client.js";
 import { debugLog } from "../debug.js";
 
-export type ActionKind = "click" | "type" | "clear" | "select" | "focus" | "hover" | "check";
+export type ActionKind =
+  | "click"
+  | "type"
+  | "clear"
+  | "select"
+  | "focus"
+  | "hover"
+  | "check"
+  | "submit";
 
 export interface Action {
   kind: ActionKind;
@@ -106,6 +114,24 @@ async function mouseClick(client: CDPClient, x: number, y: number): Promise<void
   await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...base });
 }
 
+/**
+ * Press Enter on the focused element, as a REAL key event.
+ *
+ * Note the key identity — `text` alone is enough to insert a printable
+ * character but NOT to trigger Chrome's implicit form submission; without
+ * `key`/`code`/`windowsVirtualKeyCode` this dispatches cleanly and does nothing,
+ * which is the silent-degradation shape this project keeps designing out.
+ *
+ * A real keypress is deliberately chosen over `form.requestSubmit()`: it covers
+ * the form case (implicit submission) AND the no-form case (a JS keydown
+ * listener), which is what a search box with no button actually needs.
+ */
+async function pressEnter(client: CDPClient): Promise<void> {
+  const key = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+  await client.send("Input.dispatchKeyEvent", { type: "keyDown", text: "\r", ...key });
+  await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+}
+
 /** Type into the focused element as real key events, so frameworks see them. */
 async function typeText(client: CDPClient, textToType: string): Promise<void> {
   for (const ch of textToType) {
@@ -164,6 +190,17 @@ export async function dispatchAction(
       case "type": {
         await callOn(client, objectId, `function(){ this.focus(); return "ok"; }`);
         await typeText(client, action.value ?? "");
+        break;
+      }
+      case "submit": {
+        // Focus first: implicit submission is a property of the focused control,
+        // not of the document. Optionally type a value in the same breath, so a
+        // search is one call rather than two.
+        await callOn(client, objectId, `function(){ this.focus(); return "ok"; }`);
+        if (action.value !== undefined && action.value !== "") {
+          await typeText(client, action.value);
+        }
+        await pressEnter(client);
         break;
       }
       case "select":

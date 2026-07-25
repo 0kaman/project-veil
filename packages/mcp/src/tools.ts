@@ -160,14 +160,19 @@ export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
         "veil_open or veil_query (e.g. 'button-sign-in'). Returns what CHANGED — new or vanished " +
         "actions, navigation, and any request the action fired. If the element can't be acted on " +
         "(hidden, disabled, covered by something) you get told which, so pick another element or " +
-        "act on what's blocking it rather than retrying.",
+        "act on what's blocking it rather than retrying. Use action='submit' to send a search or " +
+        "form that has NO submit button — it presses Enter in the field, and takes the text to " +
+        "search for as `value`, so it replaces type-then-look-for-a-button.",
       inputSchema: {
         session: z.string().describe("Session id from veil_open."),
         node: z.string().describe("Element id, e.g. 'button-sign-in'."),
         action: z
-          .enum(["click", "type", "clear", "select", "focus", "hover", "check"])
+          .enum(["click", "type", "clear", "select", "focus", "hover", "check", "submit"])
           .describe("What to do."),
-        value: z.string().optional().describe("Text to type, or the option to select."),
+        value: z
+          .string()
+          .optional()
+          .describe("Text to type, the option to select, or the text to submit."),
       },
     },
     ({ session, node, action, value }) =>

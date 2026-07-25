@@ -110,6 +110,12 @@ suite("replay — real Chrome (Layer 2)", () => {
           </script></body></html>`);
         return;
       }
+      if (url.startsWith("/help")) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(`<!doctype html><html><head><title>Help</title></head><body>
+          <h1>Help</h1><a href="/shop">Back to the shop</a></body></html>`);
+        return;
+      }
       if (url.startsWith("/favicon") || /\.(ico|png|css|js|map)$/.test(url)) {
         res.writeHead(404);
         res.end();
@@ -327,6 +333,35 @@ suite("replay — real Chrome (Layer 2)", () => {
       const after = await pool.replay(open.sessionId!, "button-add-to-cart");
       expect(after.refusal).toBeUndefined();
       expect(after.response?.status).toBe(200);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("does not send you to a node that navigation has removed", async () => {
+    // Measured with a live agent: it replayed a POST, was refused with "Use
+    // veil_do to perform it for real", did exactly that, and got NOT-FOUND —
+    // because the submit had navigated to the response page and the button was
+    // gone. The replay cache is keyed by node id and outlives the node, so the
+    // refusal is reached normally and the advice reads confident while being
+    // impossible to follow.
+    const pool = new SessionPool({ capMs: 4000, config: { replay: "safe" } });
+    try {
+      const open = await pool.open(`${base}/shop`);
+      const act = await pool.act(open.sessionId!, "button-add-to-cart", { kind: "click" });
+      expect(act.learnedReplay).toBe(true);
+
+      // Navigate away exactly as the real interaction did — the button leaves
+      // the page, but the template it taught us survives in the replay cache.
+      await pool.act(open.sessionId!, "link-help", { kind: "click" });
+      const r = await pool.replay(open.sessionId!, "button-add-to-cart");
+
+      expect(r.ok).toBe(false);
+      expect(r.refusal).toBe("gated"); // safe mode still refuses the POST
+      expect(r.nodeGone).toBe(true);
+      // ...and the receipt must NOT send the agent at a node that is not there
+      expect(r.detail).toMatch(/no longer on this page/);
+      expect(r.detail).toMatch(/veil_open/);
     } finally {
       await pool.shutdown();
     }

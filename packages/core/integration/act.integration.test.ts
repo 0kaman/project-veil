@@ -57,10 +57,20 @@ const PAGE = `<!doctype html><html><head><title>Act fixture</title>
         body: JSON.stringify({ q: document.querySelector('[name=q]').value }) });
     });
   </script>
+  <!-- Hacker News' shape: a form with NO submit button. Enter is the only way in.
+       And below it, the other shape: no form at all, just a keydown listener. -->
+  <form action="/find" method="GET"><input name="q"></form>
+  <input id="jsbox" aria-label="JS search">
+  <script>
+    document.getElementById('jsbox').addEventListener('keydown', function(e){
+      if (e.key === 'Enter') fetch('/find?via=keydown&q=' + encodeURIComponent(this.value));
+    });
+  </script>
 </body></html>`;
 
 suite("veil_do — real Chrome (Layer 2)", () => {
   let server: Server;
+  const found: string[] = [];
   let base: string;
   let submitted: string[] = [];
 
@@ -82,6 +92,12 @@ suite("veil_do — real Chrome (Layer 2)", () => {
         });
         return;
       }
+      if (url.startsWith("/find")) {
+        found.push(url);
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end("<!doctype html><title>Results</title><body><h1>results</h1></body>");
+        return;
+      }
       res.writeHead(200, { "content-type": "text/html" });
       res.end(PAGE);
     });
@@ -93,6 +109,51 @@ suite("veil_do — real Chrome (Layer 2)", () => {
   afterAll(async () => {
     await new Promise<void>((r) => server.close(() => r()));
   });
+
+  it("SUBMITS a form that has no submit button — Enter is the only way in", async () => {
+    // A live agent typed into Hacker News' search box, then tried to press Enter
+    // by typing "\n", and nothing happened: the action list had no way to send a
+    // form. It reported the gap itself — "the missing capability is a way to
+    // trigger the search". Asserting on the SERVER, because a keypress that
+    // dispatches cleanly and does nothing is exactly the silent failure this
+    // guards against — `text` alone is not enough, Enter needs its key identity.
+    found.length = 0;
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      const res = pool.query(open.sessionId!, { limit: 200 });
+      const nodes = "returned" in res ? res.returned : [];
+      const q = nodes.find((n) => n.role === "textbox" && !n.name);
+      expect(q).toBeDefined();
+
+      const r = await pool.act(open.sessionId!, q!.id, { kind: "submit", value: "chrome devtools" });
+      expect(r.ok).toBe(true);
+      expect(r.noOp).toBeFalsy();
+      // the request really left the browser and the server really got it
+      expect(found.some((u) => u.includes("q=chrome+devtools"))).toBe(true);
+      expect(r.diff?.navigated?.to).toMatch(/\/find/);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("submits a box with NO form at all, via its keydown listener", async () => {
+    // The other half of why this is a real keypress rather than requestSubmit():
+    // there is no form here to submit.
+    found.length = 0;
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      const r = await pool.act(open.sessionId!, "textbox-js-search", {
+        kind: "submit",
+        value: "hello",
+      });
+      expect(r.ok).toBe(true);
+      expect(found.some((u) => u.includes("via=keydown") && u.includes("q=hello"))).toBe(true);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
 
   it("types into a field and the value lands in the graph", async () => {
     const pool = new SessionPool({ capMs: 4000 });

@@ -187,7 +187,10 @@ export function renderReplay(node: string, r: ReplayResult): string {
   } else if (resp && resp.status === 403) {
     parts.push(
       "note: rejected. A one-shot token may already be spent — re-read the page " +
-        "(veil_open/veil_query) or use veil_do to perform it for real. Do not retry this as-is.",
+        (r.nodeGone
+          ? `(veil_open the original page — ${node} has left this one) and act there. `
+          : "(veil_open/veil_query) or use veil_do to perform it for real. ") +
+        "Do not retry this as-is.",
     );
   }
   if (r.error) parts.push(`error: ${r.error}`);
