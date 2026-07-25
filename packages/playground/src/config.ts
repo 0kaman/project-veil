@@ -3,7 +3,7 @@
  * misconfiguration rather than half-starting and confusing the person trying to
  * diagnose something else.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,9 +71,22 @@ export function loadConfig(argv: string[]): Config {
   const goalWords = argv.filter((a, i) => {
     if (a.startsWith("--")) return false;
     const prev = argv[i - 1];
-    if (prev === "--max-steps" || prev === "--model") return false;
+    if (prev === "--max-steps" || prev === "--model" || prev === "--prompt-file") return false;
     return true;
   });
+
+  // A long prompt should never go through the terminal at all. Pasting a 3.5KB
+  // script into a TTY is the path that silently dropped whole blocks of it.
+  const promptFile = flag("prompt-file");
+  let filePrompt: string | null = null;
+  if (promptFile) {
+    try {
+      filePrompt = readFileSync(resolve(promptFile), "utf8").trim();
+    } catch (err) {
+      throw new Error(`--prompt-file ${promptFile}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!filePrompt) throw new Error(`--prompt-file ${promptFile} is empty`);
+  }
 
   return {
     apiKey,
@@ -82,6 +95,6 @@ export function loadConfig(argv: string[]): Config {
     maxSteps: Number(flag("max-steps") ?? 20),
     traceDir: resolve(root, "traces"),
     auto: argv.includes("--auto"),
-    goal: goalWords.length > 0 ? goalWords.join(" ") : null,
+    goal: filePrompt ?? (goalWords.length > 0 ? goalWords.join(" ") : null),
   };
 }

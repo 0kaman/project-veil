@@ -5,6 +5,7 @@
  *   pnpm play                                  # REPL
  *   pnpm play "find the best fusion news"      # first turn from argv, then REPL
  *   pnpm play --auto "…"                       # skip the permission gate
+ *   pnpm play --auto --prompt-file smoke.txt   # long prompt, never via the TTY
  *
  * Mistral (streaming, tool-calling) ⇄ agent ⇄ real veil MCP server (stdio) ⇄
  * search + read. Every hop lands in traces/<ts>.trace.jsonl.

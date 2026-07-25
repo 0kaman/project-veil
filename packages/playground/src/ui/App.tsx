@@ -8,7 +8,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState, useReducer } from "react";
 import { Box, Static, Text, useApp, useInput, useStdin } from "ink";
-import TextInput from "ink-text-input";
+import { PromptInput } from "./PromptInput.js";
 import type { Config } from "../config.js";
 import { Tracer } from "../trace.js";
 import { EpisodeRecorder } from "../episode.js";
@@ -39,7 +39,6 @@ export function App({ config, autoExit }: { config: Config; autoExit?: boolean }
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const [cursor, setCursor] = useState(0);
-  const [input, setInput] = useState("");
   const [auto, setAuto] = useState(config.auto);
   const [frame, setFrame] = useState(0);
   const [tokens, setTokens] = useState({ up: 0, down: 0 });
@@ -155,7 +154,6 @@ export function App({ config, autoExit }: { config: Config; autoExit?: boolean }
       const t = text.trim();
       const session = sessionRef.current;
       if (!t || !session) return;
-      setInput("");
       if (t.startsWith("/")) {
         const cmd = t.slice(1).split(/\s+/)[0];
         if (cmd === "quit" || cmd === "exit") {
@@ -241,7 +239,7 @@ export function App({ config, autoExit }: { config: Config; autoExit?: boolean }
         <Box flexDirection="column">
           <Box borderStyle="round" borderColor="gray" paddingX={1}>
             <Text color="gray">&gt; </Text>
-            <TextInput value={input} onChange={setInput} onSubmit={submit} />
+            <PromptInput isActive={!busy && !pending && ready && keys} onSubmit={submit} />
           </Box>
           <Text color="gray" dimColor>
             {auto ? " ⏵⏵ auto-accept" : " ⏵ step mode"} · /help · ↑{num(tokens.up)} ↓{num(tokens.down)}
