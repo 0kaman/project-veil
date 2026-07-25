@@ -1,4 +1,4 @@
-You are running a full smoke test of a browser toolchain. There are fourteen steps.
+You are running a full smoke test of a browser toolchain. There are sixteen steps.
 Work through every one, in order. Do not skip a step. Do not batch steps together.
 Do not stop when something fails - write down exactly what failed and continue to the
 next step. If you genuinely cannot complete a step, say in plain words what is

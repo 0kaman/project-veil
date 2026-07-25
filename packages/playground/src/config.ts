@@ -80,12 +80,16 @@ export function loadConfig(argv: string[]): Config {
   const promptFile = flag("prompt-file");
   let filePrompt: string | null = null;
   if (promptFile) {
-    try {
-      filePrompt = readFileSync(resolve(promptFile), "utf8").trim();
-    } catch (err) {
-      throw new Error(`--prompt-file ${promptFile}: ${err instanceof Error ? err.message : String(err)}`);
+    // `pnpm play` runs with cwd = packages/playground, so a path the user typed
+    // against the repo root would not resolve. Try both, and say so when neither
+    // works — a silent miss here costs a whole run.
+    const candidates = [resolve(promptFile), resolve(root, promptFile)];
+    const found = candidates.find((c) => existsSync(c));
+    if (!found) {
+      throw new Error(`--prompt-file not found. Looked in:\n  ${candidates.join("\n  ")}`);
     }
-    if (!filePrompt) throw new Error(`--prompt-file ${promptFile} is empty`);
+    filePrompt = readFileSync(found, "utf8").trim();
+    if (!filePrompt) throw new Error(`--prompt-file ${found} is empty`);
   }
 
   return {
