@@ -22,8 +22,10 @@
 > teach the replay cache. **Slice 4: `veil_replay` + the config gate** —
 > refresh-at-fire-time (not a TTL), `replay: off|safe|all` defaulting to `safe`,
 > enforced at tool registration *and* again at fire time. Measured on a localhost
-> fixture, one act+replay per fresh session: median click **330ms → replay 6ms
-> (~55×)** — not v1's 121×, a different measurement against a trivial server.
+> fixture, one act+replay per fresh session, over two runs: median click
+> **235–330ms → replay 4–6ms (~55–59×)** — a range, because one run is not a
+> number. Not v1's 121×: different code, trivial server. Reproduce it with
+> `pnpm --filter @veil/core bench:replay`.
 > Replay also reports the desync it causes on single-use-token pages, and refuses
 > to re-spend a token the server has confirmed is burned — on server evidence
 > only, never inferred from a success, or it breaks the reusable-token schemes
@@ -66,7 +68,7 @@ Each rung is tried before the one below it. Costs are measured, not estimated.
 | **SEARCH** | Brave API | ~200ms · ~900 tok | always first |
 | **READ** | fetch → parse → extract | ~630ms · ~3k tok/page | a snippet isn't enough |
 | **ACT** | Chrome + CDP + AX tree | ~2–4s · 969MB | you must click, type, or learn behaviour |
-| **REPLAY** | captured request template | **~6ms** (measured; 330ms for the click it replaces) | you've acted here once before |
+| **REPLAY** | captured request template | **4–6ms** (measured; 235–330ms for the click it replaces) | you've acted here once before |
 
 Search snippets are 40–68 words each; ten results is ~583 tokens of real prose
 and **often answers the question outright**. v1's research session took 104.3s
