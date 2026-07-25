@@ -14,8 +14,10 @@
 > read's escalation (`via: render`). **Act path slice 1 (2026-07-25): the behavior
 > graph** — AX tree → stable ids → event binding → doers-first projection.
 > Measured live: github/login 8 doers in **189 tokens** (graph built in 13ms),
-> wikipedia 23 doers + 1,043 links in **318 tokens**. Still a promise: sessions,
-> `veil_do`, network correlation, replay.
+> wikipedia 23 doers + 1,043 links in **318 tokens**. **Slice 2: sessions** —
+> memory-budgeted `SessionPool` (LRU eviction, not rejection) + `veil_open` /
+> `veil_query` / `veil_sessions` / `veil_close` over MCP. Six tools live. Still a
+> promise: `veil_do`, network correlation, replay.
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,

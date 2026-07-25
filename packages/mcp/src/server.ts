@@ -15,7 +15,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Search } from "@veil/search";
 import { Reader } from "@veil/read";
-import { Renderer } from "@veil/core";
+import { Renderer, SessionPool } from "@veil/core";
 import { registerVeilTools } from "./tools.js";
 
 async function main(): Promise<void> {
@@ -27,22 +27,29 @@ async function main(): Promise<void> {
   // so its handle store persists across tool calls.
   const renderer = new Renderer();
   const reader = new Reader({ renderer: (url: string) => renderer.render(url) });
-  registerVeilTools(server, { search: new Search(), reader });
+
+  // The act path. Its own pool (and its own browser) so a burst of read
+  // escalations can't evict an agent's live session — different lifetimes.
+  const sessions = new SessionPool();
+
+  registerVeilTools(server, { search: new Search(), reader, sessions });
 
   const shutdown = async () => {
-    await renderer.close().catch(() => {});
+    await Promise.allSettled([renderer.close(), sessions.shutdown()]);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
   process.on("uncaughtException", (err) => {
     process.stderr.write(`veil-mcp uncaught: ${err?.stack ?? err}\n`);
-    void renderer.close().finally(() => process.exit(1));
+    // Reap BOTH browsers — Chrome is a non-detached child, so a crash that
+    // skipped this would orphan it forever (a v1 scar).
+    void Promise.allSettled([renderer.close(), sessions.shutdown()]).finally(() => process.exit(1));
   });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  process.stderr.write("veil-mcp: ready (stdio) — search + read (render escalation)\n");
+  process.stderr.write("veil-mcp: ready (stdio) — search · read (render escalation) · open/query (act)\n");
 }
 
 main().catch((err) => {

@@ -33,6 +33,14 @@ export { buildGraph, type BuildResult } from "./graph/build.js";
 export { projectLean, type ProjectOptions } from "./graph/project.js";
 export { queryNodes, type NodeFilter, type QueryResult } from "./graph/query.js";
 export { assignDisplayIds } from "./graph/ids.js";
+export {
+  SessionPool,
+  type Session,
+  type OpenResult,
+  type PoolOptions,
+  type GoneReason,
+} from "./session.js";
+export { browserTreeRssMb } from "./browser/memory.js";
 
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { createCDPClient, type CDPClient } from "./browser/cdp-client.js";

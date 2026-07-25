@@ -9,6 +9,7 @@
 import type { SearchResult } from "@veil/search";
 import type { ReadResult } from "@veil/read";
 import type { Pull } from "@veil/read";
+import type { OpenResult, QueryResult, GoneReason, BehaviorNode } from "@veil/core";
 
 export function renderSearch(r: SearchResult): string {
   const c = r.receipt;
@@ -59,4 +60,53 @@ export function renderPull(pull: Pull, handle: string): string {
   parts.push("");
   parts.push(pull.text || "(no text)");
   return parts.join("\n");
+}
+
+// ── the act path ───────────────────────────────────────────────────────────
+
+export function renderOpen(r: OpenResult): string {
+  if (!r.ok) {
+    return `via: engine · ${r.ms}ms · FAILED\n${r.error ?? "unknown error"}`;
+  }
+  const mem = r.memoryMb && r.memoryMb > 0 ? ` · browser ${r.memoryMb}MB` : "";
+  const head = `via: engine · ${r.ms}ms · session ${r.sessionId}${mem}`;
+  const parts = [head];
+  // Eviction is never silent: if opening this page cost someone else their tab,
+  // say so, because the agent may hold that handle.
+  if (r.evicted && r.evicted.length > 0) {
+    parts.push(`note: reclaimed ${r.evicted.join(", ")} to make room (memory pressure)`);
+  }
+  parts.push("");
+  parts.push(r.lean ?? "");
+  return parts.join("\n");
+}
+
+function nodeLine(n: BehaviorNode): string {
+  const state = Object.entries(n.state);
+  const st = state.length ? ` {${state.map(([k, v]) => (v === true ? k : `${k}:${v}`)).join(", ")}}` : "";
+  return `  ${n.id} [${n.role}]${n.name ? ` "${n.name}"` : ""}${st}${n.fires ? `  → ${n.fires}` : ""}`;
+}
+
+export function renderQuery(session: string, res: QueryResult | { gone: GoneReason }): string {
+  if ("gone" in res) {
+    return (
+      `via: engine · session ${session} is gone (${res.gone})\n` +
+      `Re-open the page with veil_open — a reclaimed session cannot be resumed.`
+    );
+  }
+  const head = `via: engine · ${res.matched} match${res.matched === 1 ? "" : "es"}`;
+  const parts = [res.note ? `${head}\n${res.note}` : head, ""];
+  if (res.returned.length === 0) parts.push("  (nothing matched — try a broader filter)");
+  for (const n of res.returned) parts.push(nodeLine(n));
+  return parts.join("\n");
+}
+
+export function renderSessions(
+  list: Array<{ id: string; url: string; ageMs: number; idleMs: number; doers: number }>,
+): string {
+  if (list.length === 0) return "no open sessions";
+  const s = (ms: number) => (ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`);
+  return list
+    .map((x) => `${x.id}  ${x.url}  ${x.doers} actions · ${s(x.ageMs)} old · idle ${s(x.idleMs)}`)
+    .join("\n");
 }
