@@ -270,12 +270,29 @@ export class SessionPool {
 
     const dispatched = await dispatchAction(s.client, node.backendNodeId, action);
     if (!dispatched.ok) {
-      return {
-        ok: false,
-        ms: Date.now() - t0,
-        failure: dispatched.failure,
-        detail: dispatched.detail,
-      };
+      // "covered by <div class=...>" names the blocker but cannot be acted on.
+      // Turn the overlay's dismiss controls into NODE IDS, which can be.
+      let detail = dispatched.detail;
+      if (dispatched.dismiss?.length) {
+        const wanted = dispatched.dismiss.map((d) => d.toLowerCase());
+        const ids = [...s.graph.nodes.values()]
+          .filter((n) => n.name && wanted.includes(n.name.trim().toLowerCase()))
+          .map((n) => n.id);
+        detail = ids.length
+          ? `${detail} — dismiss it first: veil_do ${ids.slice(0, 3).join(" or ")}`
+          : `${detail} — it offers ${dispatched.dismiss
+              .map((d) => `"${d}"`)
+              .join(", ")}, but no matching node is in the graph; veil_query for it`;
+      } else if (dispatched.backdrop) {
+        // Measured: given only "covered by <div class=hsBackDrop>", a live agent
+        // ran four queries guessing at "close"/"Close"/"hsBackDrop", found
+        // nothing, and abandoned the site. There is nothing to find — say so.
+        detail =
+          `${detail} — that is a BACKDROP behind an open widget (a menu, calendar or ` +
+          `dialog). It has no close control, so do not search for one. Finish or ` +
+          `cancel whatever is open — the control you want is inside it, not under it.`;
+      }
+      return { ok: false, ms: Date.now() - t0, failure: dispatched.failure, detail };
     }
 
     const settle = await awaitSettle(s.client, settleConfig(this.settleOver));

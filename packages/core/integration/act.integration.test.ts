@@ -25,6 +25,16 @@ const PAGE = `<!doctype html><html><head><title>Act fixture</title>
   #wrap { position:relative; width:220px; height:40px; }
   #wrap button { position:absolute; inset:0; width:100%; height:100%; }
   #cover { position:absolute; inset:0; background:rgba(0,0,0,.2); z-index:10; }
+  /* Parked well clear of everything else: an earlier revision put these at
+     top:110px and the promo silently covered the JS search box, breaking the
+     submit test. Same trap as the note above — the check was right, the
+     fixture was wrong. */
+  #behind { position:absolute; top:900px; left:20px; width:180px; height:36px; }
+  #promo { position:absolute; top:890px; left:0; width:400px; height:60px;
+           background:#fff; z-index:50; }
+  #underscrim { position:absolute; top:1010px; left:20px; width:180px; height:36px; }
+  #scrim { position:absolute; top:1000px; left:0; width:400px; height:60px;
+           background:rgba(0,0,0,.3); z-index:60; }
   #hidden-panel { display:none; }
 </style></head><body>
   <form id="f" action="/api/submit" method="POST">
@@ -40,6 +50,18 @@ const PAGE = `<!doctype html><html><head><title>Act fixture</title>
 
   <button disabled aria-label="Locked action">Locked action</button>
   <div id="wrap"><button aria-label="Underneath">Underneath</button><div id="cover"></div></div>
+  <!-- The shape that actually stopped a live agent: a promo modal over a real
+       control, with the way out sitting inside the overlay. -->
+  <div id="promo" class="modal-overlay" role="dialog" aria-modal="true">
+    <button aria-label="No thanks">No thanks</button>
+    <button aria-label="Subscribe">Subscribe</button>
+  </div>
+  <button id="behind" aria-label="Behind the modal">Behind the modal</button>
+  <!-- A real backdrop: the dimming layer an open calendar puts up. Class name
+       taken from cleartrip, which is where this was observed. No controls in
+       it, by design. -->
+  <div id="scrim" class="calendar--backdrop"></div>
+  <button id="underscrim" aria-label="Under the scrim">Under the scrim</button>
 
   <script>
     // Ambient poll — runs forever. Must not be attributed to an action, and must
@@ -220,6 +242,51 @@ suite("veil_do — real Chrome (Layer 2)", () => {
       expect(r.ok).toBe(false);
       expect(r.failure).toBe("disabled");
       expect(r.detail).toMatch(/disabled/i);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("NAMES the node that dismisses the overlay, not just the overlay", async () => {
+    // Measured: told only "covered by <div class=...>", a live agent guessed at
+    // "close", "Close" and "hsBackDrop", found nothing, and abandoned the site.
+    // A blocker it cannot address is a dead end; a node id is a next move.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      const r = await pool.act(open.sessionId!, "button-behind-the-modal", { kind: "click" });
+      expect(r.ok).toBe(false);
+      expect(r.failure).toBe("obscured");
+      expect(r.detail).toMatch(/covered by/i);
+      // the actionable half: a node the agent can actually call veil_do on
+      expect(r.detail).toMatch(/dismiss it first/i);
+      expect(r.detail).toMatch(/button-no-thanks/);
+      // and it must not offer the thing that is NOT a way out
+      expect(r.detail).not.toMatch(/button-subscribe/);
+
+      // following that advice actually works
+      const d = await pool.act(open.sessionId!, "button-no-thanks", { kind: "click" });
+      expect(d.ok).toBe(true);
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("calls a BACKDROP what it is, so the agent stops hunting for a close button", async () => {
+    // #scrim carries cleartrip's own class name. Note the neighbouring #cover is
+    // deliberately NOT a backdrop — it is a small unclassed overlay, and must not
+    // be described as one. Measured on the real thing: given only "covered by
+    // <div class=hsBackDrop>", a live agent ran four queries guessing at
+    // "close"/"Close"/"hsBackDrop", found nothing, and abandoned the site.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      const r = await pool.act(open.sessionId!, "button-under-the-scrim", { kind: "click" });
+      expect(r.failure).toBe("obscured");
+      expect(r.detail).toMatch(/BACKDROP/);
+      expect(r.detail).toMatch(/do not search for one/i);
+      // and it must not invent a dismiss node that isn't there
+      expect(r.detail).not.toMatch(/dismiss it first/i);
     } finally {
       await pool.shutdown();
     }

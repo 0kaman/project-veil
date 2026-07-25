@@ -43,6 +43,11 @@ export interface DispatchResult {
   ok: boolean;
   failure?: ActionFailure;
   detail?: string;
+  /** Accessible names of dismiss-looking controls found inside the blocking
+   * overlay. The session turns these into node ids the agent can act on. */
+  dismiss?: string[];
+  /** The blocker is a backdrop, which has no close control by design. */
+  backdrop?: boolean;
   /** Center point actually used, for debugging. */
   at?: { x: number; y: number };
 }
@@ -77,7 +82,34 @@ const ACTIONABLE_FN = `async function() {
     // Obscured? Whatever is on top must be us or inside us.
     var top = document.elementFromPoint(cx, cy);
     if (top && top !== el && !el.contains(top) && !top.contains(el)) {
+      // Naming the blocker is not enough — an agent cannot address a raw <div>.
+      // Measured: told "covered by <div class=...>", a live agent guessed at
+      // "close", "Close" and "hsBackDrop", found nothing, and abandoned the
+      // site. So hunt the overlay for something DISMISSIBLE and report its
+      // accessible name; the host turns that into a node id it can act on.
+      var scope = top.closest('[role=dialog],[aria-modal="true"],[class*=modal],[class*=overlay],[class*=popup]') || top;
+      var DISMISS = /^(close|dismiss|cancel|no thanks|not now|skip|maybe later|got it|ok|okay|accept|continue|x|\u00d7|\u2715|\u2716)$/i;
+      var names = [];
+      try {
+        var cands = scope.querySelectorAll('button,[role=button],a,[aria-label],[title]');
+        for (var i = 0; i < cands.length && names.length < 4; i++) {
+          var c = cands[i];
+          var label = (c.getAttribute('aria-label') || c.getAttribute('title') || c.textContent || '').trim();
+          if (!label || label.length > 40) continue;
+          if (!DISMISS.test(label)) continue;
+          if (names.indexOf(label) === -1) names.push(label);
+        }
+      } catch (e) {}
+      // A BACKDROP is the dimming layer behind an open widget — it has no close
+      // control by design, and saying so stops the agent hunting for one.
+      var cls = String(top.className || '');
+      var r0 = top.getBoundingClientRect();
+      var backdrop = /backdrop|scrim|mask|veil/i.test(cls) ||
+        (r0.width >= innerWidth * 0.9 && r0.height >= innerHeight * 0.9);
       return JSON.stringify({ ok:false, why:'obscured',
+        blocker: '<' + top.tagName.toLowerCase() + (top.className ? ' class=' + String(top.className).slice(0,40) : '') + '>',
+        backdrop: backdrop,
+        dismiss: names,
         detail: 'covered by <' + top.tagName.toLowerCase() + (top.className ? ' class=' + String(top.className).slice(0,40) : '') + '>' });
     }
     return JSON.stringify({ ok:true, x:cx, y:cy });
@@ -151,7 +183,18 @@ export async function dispatchAction(
   }
 
   // Actionability first — a failure here is information, not an error.
-  let verdict: { ok: boolean; why?: ActionFailure; detail?: string; x?: number; y?: number };
+  let verdict: {
+    ok: boolean;
+    why?: ActionFailure;
+    detail?: string;
+    x?: number;
+    y?: number;
+    blocker?: string;
+    /** The blocker is a full-bleed backdrop — by design it has no close control. */
+    backdrop?: boolean;
+    /** Accessible names of dismiss-looking controls inside the overlay. */
+    dismiss?: string[];
+  };
   try {
     const raw = await callOn(client, objectId, ACTIONABLE_FN);
     verdict = raw ? JSON.parse(raw) : { ok: false, why: "not-found", detail: "no verdict" };
@@ -159,7 +202,13 @@ export async function dispatchAction(
     return { ok: false, failure: "dispatch-failed", detail: `actionability check failed: ${msg(err)}` };
   }
   if (!verdict.ok) {
-    return { ok: false, failure: verdict.why ?? "not-found", detail: verdict.detail };
+    return {
+      ok: false,
+      failure: verdict.why ?? "not-found",
+      detail: verdict.detail,
+      ...(verdict.dismiss?.length ? { dismiss: verdict.dismiss } : {}),
+      ...(verdict.backdrop ? { backdrop: true } : {}),
+    };
   }
   const at = { x: verdict.x!, y: verdict.y! };
 
