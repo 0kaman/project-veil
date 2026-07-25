@@ -19,9 +19,28 @@ export { chromeAvailable, findChromeBinary } from "./browser/launcher.js";
 export type { CDPClient } from "./browser/cdp-client.js";
 export type { RenderPageResult, SettleOptions } from "./browser/page.js";
 
+// ── the behavior graph (act path) ──────────────────────────────────────────
+export type {
+  BehaviorGraph,
+  BehaviorNode,
+  EventBinding,
+  EventCategory,
+  GraphMeta,
+  NodeState,
+} from "./graph/model.js";
+export { DOER_ROLES, NAV_ROLES, routeOf } from "./graph/model.js";
+export { buildGraph, type BuildResult } from "./graph/build.js";
+export { projectLean, type ProjectOptions } from "./graph/project.js";
+export { queryNodes, type NodeFilter, type QueryResult } from "./graph/query.js";
+export { assignDisplayIds } from "./graph/ids.js";
+
 import { launchBrowser, type BrowserHandle } from "./browser/launcher.js";
 import { createCDPClient, type CDPClient } from "./browser/cdp-client.js";
 import { renderPage, type SettleOptions } from "./browser/page.js";
+import { buildGraph } from "./graph/build.js";
+import { projectLean } from "./graph/project.js";
+import type { BehaviorGraph } from "./graph/model.js";
+import type { Stage2Stats } from "./pipeline/stage-2-events.js";
 import { debugLog } from "./debug.js";
 
 export interface RenderResult {
@@ -33,6 +52,12 @@ export interface RenderResult {
   /** Set when the render failed (launch, navigation, or connection). */
   error?: string;
 }
+
+/** Result of perceiving a page. Never throws — a failure is `{ ok: false }`,
+ * mirroring the read/search receipts one layer up. */
+export type PerceiveResult =
+  | { ok: true; ms: number; graph: BehaviorGraph; lean: string; stage2: Stage2Stats }
+  | { ok: false; ms: number; error: string };
 
 export interface RendererOptions extends SettleOptions {
   /** Reuse an already-launched browser (e.g. a shared pool). */
@@ -97,6 +122,57 @@ export class Renderer {
       return { html: page.html, finalUrl: page.finalUrl, ms, ok: true };
     } catch (err) {
       return { html: "", finalUrl: url, ms: Date.now() - t0, ok: false, error: msg(err) };
+    } finally {
+      client?.close();
+      if (targetId) await this.closeTarget(browser, targetId);
+    }
+  }
+
+  /**
+   * Perceive a page: navigate, settle, build the behavior graph, and project the
+   * lean view. Slice 1 of the act path — it opens a target, reads, and closes it.
+   * The real session model (a tab held open across veil_do calls) lands next.
+   */
+  async perceive(url: string): Promise<PerceiveResult> {
+    const t0 = Date.now();
+    let browser: BrowserHandle;
+    try {
+      browser = await this.ensureBrowser();
+    } catch (err) {
+      return { ok: false, ms: Date.now() - t0, error: `launch failed: ${msg(err)}` };
+    }
+
+    let targetId: string | undefined;
+    let client: CDPClient | undefined;
+    try {
+      const bc = await createCDPClient(browser.wsUrl);
+      const created = (await bc.send("Target.createTarget", { url: "about:blank" })) as {
+        targetId: string;
+      };
+      targetId = created.targetId;
+      bc.close();
+
+      client = await createCDPClient(`ws://127.0.0.1:${browser.port}/devtools/page/${targetId}`);
+      // DOM + Accessibility must be enabled before the graph passes run.
+      await client.send("DOM.enable");
+      await client.send("Accessibility.enable");
+      const page = await renderPage(client, url, this.settle);
+      if (page.errorText) {
+        return { ok: false, ms: Date.now() - t0, error: page.errorText };
+      }
+      // renderPage navigated the document; re-prime DOM for the new one.
+      await client.send("DOM.getDocument", { depth: -1 });
+
+      const { graph, stage2 } = await buildGraph(client);
+      return {
+        ok: true,
+        ms: Date.now() - t0,
+        graph,
+        lean: projectLean(graph),
+        stage2,
+      };
+    } catch (err) {
+      return { ok: false, ms: Date.now() - t0, error: msg(err) };
     } finally {
       client?.close();
       if (targetId) await this.closeTarget(browser, targetId);
