@@ -9,6 +9,7 @@
  * needs a browser (which doesn't exist yet).
  */
 import type { Tracer } from "./trace.js";
+import { pruneHistory, approxTokens } from "./prune.js";
 import type { VeilMcp } from "./mcp.js";
 import { Mistral, type ChatMessage } from "./mistral.js";
 
@@ -54,6 +55,9 @@ export interface SessionDeps {
   gate: StepGate;
   ui: UiSink;
   maxSteps: number;
+  /** Collapse old tool bodies to their receipts before sending. Default on —
+   * measured at 93% of a run's prompt spend being re-sent history. */
+  prune?: boolean;
 }
 
 /** Phrasings that mean "I am about to act", not "I am done". Kept narrow: a
@@ -67,8 +71,11 @@ export class AgentSession {
   private step = 0;
   private aborted = false;
   private nudges = 0;
+  private readonly prune: boolean;
 
-  constructor(private readonly deps: SessionDeps) {}
+  constructor(private readonly deps: SessionDeps) {
+    this.prune = deps.prune ?? true;
+  }
 
   reset(): void {
     this.messages = [{ role: "system", content: SYSTEM_PROMPT }];
@@ -92,7 +99,14 @@ export class AgentSession {
       for (let i = 0; i < maxSteps; i++) {
         this.step++;
         let streamed = "";
-        const res = await llm.chat(this.step, this.messages, mcp.toolSchemas(), (d) => {
+        // Prune the SENT copy, not the stored one: history stays complete for
+        // the trace, and pruning is a view recomputed each turn.
+        const sent = this.prune ? pruneHistory(this.messages) : this.messages;
+        if (this.prune && sent !== this.messages) {
+          const saved = approxTokens(this.messages) - approxTokens(sent);
+          if (saved > 0) tracer.emit({ kind: "prune", step: this.step, savedTokens: saved });
+        }
+        const res = await llm.chat(this.step, sent, mcp.toolSchemas(), (d) => {
           streamed += d;
           ui.textDelta(d);
         });

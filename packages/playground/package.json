@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "analyse": "tsx src/analyse.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench:prune": "tsx bench/prune-benchmark.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -53,6 +53,8 @@ export type TraceBody =
       text: string;
     }
   | { kind: "warn"; step: number; code: string; message: string }
+  /** Context saved by collapsing old tool bodies — never a silent behaviour. */
+  | { kind: "prune"; step: number; savedTokens: number }
   | { kind: "error"; step: number; message: string; stack?: string }
   | { kind: "run.end"; ms: number; steps: number; reason: string };
 
