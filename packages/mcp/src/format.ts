@@ -140,6 +140,16 @@ export function renderAct(node: string, action: string, r: ActResult): string {
   const d = r.diff;
   if (d) {
     if (d.navigated) parts.push(`navigated: ${d.navigated.from} → ${d.navigated.to}`);
+    // Before the id churn, so "-16 actions" is explained rather than alarming.
+    if (d.dialog?.opened) {
+      parts.push(
+        `DIALOG OPENED: "${d.dialog.opened}" — the rest of the page is now inert, so ` +
+          `actions that vanished are behind it, not gone. Finish or dismiss it, and ` +
+          `veil_query to see what is reachable inside.`,
+      );
+    } else if (d.dialog?.closed) {
+      parts.push(`dialog closed: "${d.dialog.closed}" — the page is reachable again.`);
+    }
     const bits: string[] = [];
     if (d.added.length) bits.push(`+${d.added.length} actions (${d.added.slice(0, 5).join(", ")})`);
     if (d.removed.length) bits.push(`−${d.removed.length} actions`);

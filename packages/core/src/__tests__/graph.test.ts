@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { assignDisplayIds } from "../graph/ids.js";
 import { projectLean } from "../graph/project.js";
 import { queryNodes } from "../graph/query.js";
+import { diffGraphs } from "../graph/diff.js";
 import type { BehaviorGraph, BehaviorNode } from "../graph/model.js";
 
 const node = (over: Partial<BehaviorNode> & { id: string; role: string }): BehaviorNode => ({
@@ -80,6 +81,25 @@ describe("projectLean", () => {
     expect(out).toMatch(/veil_query/);
   });
 
+  it("says a DIALOG is holding the page, so missing nodes read as hidden not gone", () => {
+    // Measured in all six recorded fare runs: typing into Google Flights' origin
+    // opens `dialog "Enter your origin"`, aria-hides the rest of the page, and
+    // `combobox-where-to` correctly leaves the graph. Every run read that as the
+    // page breaking. The evidence was ours — a live `dialog` AX node — and we
+    // were dropping it because `dialog` is not a doer role.
+    const g = graph([node({ id: "combobox-where-else", role: "combobox", name: "Where else?" })]);
+    g.meta.dialog = "Enter your origin";
+    const out = projectLean(g);
+    expect(out).toMatch(/DIALOG OPEN: "Enter your origin"/);
+    expect(out).toMatch(/behind it, not gone/);
+  });
+
+  it("stays silent when no dialog is open", () => {
+    expect(projectLean(graph([node({ id: "button-x", role: "button", name: "X" })]))).not.toMatch(
+      /DIALOG/,
+    );
+  });
+
   it("says so when nothing is actionable", () => {
     const out = projectLean(graph([node({ id: "link-a", role: "link", name: "A" })]));
     expect(out).toMatch(/nothing on this page is actionable/);
@@ -142,5 +162,33 @@ describe("queryNodes", () => {
     expect(r.matched).toBe(3);
     expect(r.returned).toHaveLength(1);
     expect(r.note).toMatch(/returned 1 of 3/);
+  });
+});
+
+describe("diffGraphs — a dialog opening is the receipt an agent actually reads", () => {
+  const withDialog = (name?: string) => {
+    const g = graph([node({ id: "button-a", role: "button", name: "A" })]);
+    if (name) g.meta.dialog = name;
+    return g;
+  };
+
+  it("reports a dialog OPENING, which is what explains the vanished nodes", () => {
+    const d = diffGraphs(withDialog(), withDialog("Enter your origin"));
+    expect(d.dialog?.opened).toBe("Enter your origin");
+    expect(d.dialog?.closed).toBeUndefined();
+  });
+
+  it("reports a dialog CLOSING, so the agent knows the page is reachable again", () => {
+    const d = diffGraphs(withDialog("Enter your origin"), withDialog());
+    expect(d.dialog?.closed).toBe("Enter your origin");
+    expect(d.dialog?.opened).toBeUndefined();
+  });
+
+  it("says nothing when the same dialog stayed open — that is not news", () => {
+    expect(diffGraphs(withDialog("Pick a date"), withDialog("Pick a date")).dialog).toBeUndefined();
+  });
+
+  it("says nothing when there was never a dialog", () => {
+    expect(diffGraphs(withDialog(), withDialog()).dialog).toBeUndefined();
   });
 });

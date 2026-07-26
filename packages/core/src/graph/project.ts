@@ -40,6 +40,18 @@ export function projectLean(graph: BehaviorGraph, opts: ProjectOptions = {}): st
 
   out.push(`route: ${graph.meta.route}`);
   if (graph.meta.title) out.push(`title: ${graph.meta.title}`);
+  // A dialog makes the rest of the page inert, so the nodes it hides are
+  // correctly absent — but silence about that reads as the page breaking. In
+  // all six recorded fare runs the agent typed into Google Flights' origin,
+  // watched `combobox-where-to` disappear behind "Enter your origin", and
+  // treated a modal it had just opened as a fault.
+  if (graph.meta.dialog) {
+    out.push(
+      `DIALOG OPEN: "${graph.meta.dialog}" — the rest of the page is inert until it ` +
+        `is resolved, so only what is listed below can be acted on. Anything that ` +
+        `vanished is behind it, not gone.`,
+    );
+  }
 
   const doers = graph.doers.map((id) => graph.nodes.get(id)!).filter(Boolean);
   const shown = doers.slice(0, maxDoers);

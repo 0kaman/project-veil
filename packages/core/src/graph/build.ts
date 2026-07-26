@@ -37,7 +37,7 @@ export async function buildGraph(client: CDPClient): Promise<BuildResult> {
   const t0 = Date.now();
 
   const { url, title } = await pageMeta(client);
-  const { nodes, axNodeCount } = await buildFromAXTree(client);
+  const { nodes, axNodeCount, dialog } = await buildFromAXTree(client);
   const stage2 = await enrichWithEvents(client, nodes);
 
   const map = new Map(nodes.map((n) => [n.id, n]));
@@ -80,7 +80,14 @@ export async function buildGraph(client: CDPClient): Promise<BuildResult> {
 
   return {
     graph: {
-      meta: { url, title, route: routeOf(url), axNodes: axNodeCount, builtInMs: Date.now() - t0 },
+      meta: {
+        url,
+        title,
+        route: routeOf(url),
+        axNodes: axNodeCount,
+        builtInMs: Date.now() - t0,
+        ...(dialog !== undefined && { dialog }),
+      },
       nodes: map,
       doers,
       links,

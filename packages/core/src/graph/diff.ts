@@ -18,6 +18,10 @@ export interface GraphDiff {
   changed: Array<{ id: string; was: string; now: string }>;
   linksBefore: number;
   linksAfter: number;
+  /** A dialog opened or closed. This is the receipt an agent actually reads
+   * after veil_do, so it is where the modal has to be reported: measured, six
+   * of six fare runs saw nodes vanish here and read it as a broken page. */
+  dialog?: { opened?: string; closed?: string };
 }
 
 function stateStr(s: Record<string, unknown>): string {
@@ -29,6 +33,13 @@ export function diffGraphs(before: BehaviorGraph, after: BehaviorGraph): GraphDi
   const beforeDoers = new Set(before.doers);
   const afterDoers = new Set(after.doers);
 
+  const dialogChange =
+    before.meta.dialog !== after.meta.dialog
+      ? {
+          ...(after.meta.dialog !== undefined && { opened: after.meta.dialog }),
+          ...(before.meta.dialog !== undefined && { closed: before.meta.dialog }),
+        }
+      : undefined;
   const added = after.doers.filter((id) => !beforeDoers.has(id));
   const removed = before.doers.filter((id) => !afterDoers.has(id));
 
@@ -52,6 +63,7 @@ export function diffGraphs(before: BehaviorGraph, after: BehaviorGraph): GraphDi
     changed,
     linksBefore: before.links.length,
     linksAfter: after.links.length,
+    ...(dialogChange && { dialog: dialogChange }),
   };
 }
 

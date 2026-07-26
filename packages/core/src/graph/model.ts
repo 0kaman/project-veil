@@ -39,6 +39,11 @@ export const DOER_ROLES = new Set([
 /** Roles that are interactive but navigational — counted, not listed. */
 export const NAV_ROLES = new Set(["link", "option"]);
 
+/** Roles that make the REST of the page inert while they are open. Not doers —
+ * you don't act on a dialog, you act inside it — but an agent that isn't told
+ * one is open reads the page it can no longer reach as broken. */
+export const MODAL_ROLES = new Set(["dialog", "alertdialog"]);
+
 /** Actionability state worth surfacing. Measured at 2% token overhead — free. */
 export interface NodeState {
   disabled?: boolean;
@@ -93,6 +98,12 @@ export interface GraphMeta {
   /** Total non-ignored AX nodes considered — the denominator for honesty. */
   axNodes: number;
   builtInMs: number;
+  /** An open dialog's accessible name, when one is holding the page. Measured:
+   * typing into Google Flights' origin opens `dialog "Enter your origin"` and
+   * aria-hides everything else, so `combobox-where-to` correctly leaves the
+   * graph — and in all six recorded fare runs the agent read that as the page
+   * breaking rather than as a modal it had opened. */
+  dialog?: string;
 }
 
 export interface BehaviorGraph {

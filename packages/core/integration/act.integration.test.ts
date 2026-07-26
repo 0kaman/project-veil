@@ -85,12 +85,43 @@ const PAGE = `<!doctype html><html><head><title>Act fixture</title>
   <input id="jsbox" aria-label="JS search">
   <!-- Prefilled, like a site that geolocates your origin for you. -->
   <input id="prefilled" aria-label="Origin" value="Bengaluru">
+
   <script>
     document.getElementById('jsbox').addEventListener('keydown', function(e){
       if (e.key === 'Enter') fetch('/find?via=keydown&q=' + encodeURIComponent(this.value));
     });
   </script>
 </body></html>`;
+
+/** Google Flights' actual shape: opening the origin dialog aria-hides the WHOLE
+ * rest of the page, so every other control correctly leaves the graph. Served on
+ * its own route — sharing the main fixture entangled it with a `role="dialog"`
+ * promo that is present but NOT blocking, which is a distinction the detection
+ * has to make. */
+const DIALOG_PAGE = `<!doctype html><html><head><title>Dialog fixture</title></head><body>
+  <div id="page">
+    <input id="origin" aria-label="Origin">
+    <input id="dest" aria-label="Destination">
+    <button id="search" aria-label="Search flights">Search</button>
+  </div>
+  <div id="dlg" role="dialog" aria-modal="true" aria-label="Enter your origin" hidden>
+    <input id="dlgbox" aria-label="Origin search">
+    <button id="dlgdone" aria-label="Done">Done</button>
+  </div>
+  <script>
+    document.getElementById('origin').addEventListener('click', function(){
+      document.getElementById('dlg').hidden = false;
+      // inert, not aria-hidden: Chrome refuses to hide FOCUSABLE descendants
+      // via aria-hidden (it is invalid markup), so they stay in the AX tree and
+      // the dialog would not read as blocking. inert is what a modal should use
+      // and what actually removes them.
+      document.getElementById('page').inert = true;
+    });
+    document.getElementById('dlgdone').addEventListener('click', function(){
+      document.getElementById('dlg').hidden = true;
+      document.getElementById('page').inert = false;
+    });
+  </script></body></html>`;
 
 suite("veil_do — real Chrome (Layer 2)", () => {
   let server: Server;
@@ -114,6 +145,11 @@ suite("veil_do — real Chrome (Layer 2)", () => {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
         });
+        return;
+      }
+      if (url.startsWith("/dialog")) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(DIALOG_PAGE);
         return;
       }
       if (url.startsWith("/find")) {
@@ -211,6 +247,50 @@ suite("veil_do — real Chrome (Layer 2)", () => {
       const open = await pool.open(base);
       const r = await pool.act(open.sessionId!, "textbox-origin", { kind: "clear" });
       expect(r.value).toBe("");
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("REPORTS a dialog opening, so vanished nodes read as hidden rather than gone", async () => {
+    // All six recorded fare runs hit this and none understood it: typing into
+    // Google Flights' origin opens `dialog "Enter your origin"`, aria-hides the
+    // page, and `combobox-where-to` correctly leaves the graph. Every run read
+    // its own modal as the page breaking, and burned steps hunting the field.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(`${base}/dialog`);
+      expect(open.lean).toContain("textbox-destination");
+      expect(open.lean).not.toMatch(/DIALOG/); // nothing is blocking yet
+
+      const r = await pool.act(open.sessionId!, "textbox-origin", { kind: "click" });
+      expect(r.ok).toBe(true);
+      // the diff — what an agent reads after veil_do — names it
+      expect(r.diff?.dialog?.opened).toBe("Enter your origin");
+      // and the node really did leave, which is CORRECT, not a fault
+      expect(r.diff?.removed).toContain("textbox-destination");
+
+      // closing it says the page is reachable again
+      const back = await pool.act(open.sessionId!, "button-done", { kind: "click" });
+      expect(back.diff?.dialog?.closed).toBe("Enter your origin");
+      expect(back.diff?.added).toContain("textbox-destination");
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("does NOT call a present-but-harmless dialog blocking", async () => {
+    // The main fixture carries a role="dialog" promo while the page stays fully
+    // usable. Announcing that as a modal would be its own false receipt — and
+    // this case is what caught the first, naive "any dialog node" detection.
+    // Measured separation is wide: Google with its origin dialog open hides 508
+    // of 561 AX nodes; this page hides none.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      expect(open.lean).not.toMatch(/DIALOG OPEN/);
+      const r = await pool.act(open.sessionId!, "textbox-origin", { kind: "type", value: "x" });
+      expect(r.diff?.dialog).toBeUndefined();
     } finally {
       await pool.shutdown();
     }

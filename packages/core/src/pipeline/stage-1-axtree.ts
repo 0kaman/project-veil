@@ -14,6 +14,7 @@ import type { CDPClient } from "../browser/cdp-client.js";
 import { assignDisplayIds } from "../graph/ids.js";
 import {
   DOER_ROLES,
+  MODAL_ROLES,
   NAV_ROLES,
   type BehaviorNode,
   type NodeState,
@@ -34,6 +35,8 @@ interface RawAXNode {
   value?: RawAXValue;
   properties?: RawAXProperty[];
   backendDOMNodeId?: number;
+  childIds?: string[];
+  ignoredReasons?: RawAXProperty[];
 }
 
 const STATE_KEYS = new Set([
@@ -68,6 +71,65 @@ export interface Stage1Result {
   nodes: BehaviorNode[];
   /** Non-ignored AX nodes seen — the denominator the receipt reports. */
   axNodeCount: number;
+  /** Accessible name of an open dialog, if one is holding the page. */
+  dialog?: string;
+}
+
+/** Ids in a node's AX subtree, so "inside the dialog" is a fact, not a guess. */
+function subtreeIds(root: RawAXNode, byId: Map<string, RawAXNode>): Set<string> {
+  const out = new Set<string>();
+  const stack = [...(root.childIds ?? [])];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (out.has(id)) continue;
+    out.add(id);
+    const n = byId.get(id);
+    if (n?.childIds) stack.push(...n.childIds);
+  }
+  return out;
+}
+
+/** Chrome's reasons for hiding a subtree behind a modal. */
+const HIDDEN_BY_MODAL = /^(ariaHiddenSubtree|ariaHiddenElement|inertSubtree|inertElement)$/;
+
+/**
+ * Is a dialog actually HOLDING the page, or merely present?
+ *
+ * Presence alone is not enough — a page can carry a `role="dialog"` promo while
+ * everything else stays usable, and calling that a blocking modal would be its
+ * own false receipt. Two signals, because one alone misses a real case:
+ *
+ *   1. nothing interactive outside the dialog. Catches the clean `inert` modal.
+ *   2. most of the tree hidden by aria-hidden/inert. Catches Google Flights,
+ *      where the autocomplete listbox is portalled to <body> and so sits
+ *      OUTSIDE the dialog while the page behind it is gone.
+ *
+ * Measured separation is wide, not a tuned threshold: Google with its dialog
+ * open hides 508 of 561 nodes (90%); a non-blocking promo dialog hides 0.
+ */
+function findBlockingDialog(
+  all: RawAXNode[],
+  interactive: RawAXNode[],
+  everyNode: RawAXNode[],
+): string | undefined {
+  const dialogs = all.filter((n) => MODAL_ROLES.has(str(n.role)));
+  if (dialogs.length === 0) return undefined;
+
+  let hidden = 0;
+  for (const n of everyNode) {
+    if (n.ignoredReasons?.some((r) => HIDDEN_BY_MODAL.test(r.name))) hidden++;
+  }
+  const mostlyHidden = everyNode.length > 0 && hidden / everyNode.length >= 0.5;
+
+  const byId = new Map(all.map((n) => [n.nodeId, n]));
+  for (const d of dialogs) {
+    const inside = subtreeIds(d, byId);
+    const outside = interactive.filter((n) => !inside.has(n.nodeId) && n.nodeId !== d.nodeId);
+    if (outside.length === 0 || mostlyHidden) {
+      return str(d.name).replace(/\s+/g, " ").trim() || "(unnamed)";
+    }
+  }
+  return undefined;
 }
 
 export async function buildFromAXTree(client: CDPClient): Promise<Stage1Result> {
@@ -102,5 +164,12 @@ export async function buildFromAXTree(client: CDPClient): Promise<Stage1Result> 
     };
   });
 
-  return { nodes, axNodeCount: all.length };
+  // A dialog only counts as HOLDING the page when nothing outside it is
+  // actionable — that is the condition an agent cares about, and it is what
+  // makes the vanished nodes explicable. Mere presence is not enough: a page
+  // can carry a `role="dialog"` promo while the rest stays perfectly usable,
+  // and announcing that as a blocking modal would be its own false receipt.
+  const dialog = findBlockingDialog(all, interactive, res.nodes ?? []);
+
+  return { nodes, axNodeCount: all.length, ...(dialog !== undefined && { dialog }) };
 }
