@@ -32,6 +32,15 @@
 > Django and Rails use (DECISIONS 2026-07-25 + its same-day amendment). **Eight tools
 > live — the act path is complete.**
 >
+> **The playground prunes its own history** (2026-07-26): old tool bodies collapse
+> to their receipt plus the handle that re-pulls them, because 93% of a real run's
+> prompt spend was re-sent history and `veil_read` bodies were 70% of it. Measured
+> by replaying 14 recorded conversations, pruner as the only variable: **70.2%**
+> fewer prompt tokens (`pnpm --filter @veil/playground bench:prune`). Note what
+> this says about perception: `veil_open` + `veil_query` together cost ~4,300
+> tokens across an entire run, so the doers-first graph is not the expense — prose
+> is.
+>
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
 > from design-time probes, or now from the built code.
