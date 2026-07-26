@@ -117,6 +117,80 @@ export function fallbackExtract(html: string): { text: string } {
   return { text: blockText(document) };
 }
 
+/**
+ * Extraction for a page an agent has DRIVEN, where the answer is usually a list
+ * of records rather than an article.
+ *
+ * Readability and `fallbackExtract` both pick ONE best container and flatten it.
+ * Measured on a live Cleartrip results page: the container holding the flight
+ * rows scored 3,519 and lost to a 4,070 promo block, so the read returned column
+ * headers and bare prices — "₹8,771" three times with no airline or time
+ * attached — while the rows sat in the DOM fully formed. Single-best is the
+ * wrong shape for a results grid; the page says several things at once.
+ *
+ * So: keep every candidate that clears the bar, drop any that merely contains
+ * another (or the text arrives two and three times over), and join them in
+ * document order. Scoped to session reads deliberately — on a fetched article
+ * this would drag in the comment section, and the fetch path is tuned against a
+ * 60-page corpus that must not move.
+ */
+export function denseExtract(html: string): { text: string } {
+  const { document } = parseHTML(html);
+  document.querySelectorAll(BOILERPLATE).forEach((el) => el.remove());
+
+  type Cand = { el: Element; text: string; score: number };
+  const cands: Cand[] = [];
+  for (const el of document.querySelectorAll("main,article,[role=main],section,div,ul,ol,table")) {
+    const text = tidy((el.textContent ?? "").replace(/\s+/g, " "));
+    if (text.length < 200) continue;
+    let linkChars = 0;
+    for (const a of Array.from(el.querySelectorAll("a")) as Array<{ textContent: string | null }>) {
+      linkChars += (a.textContent ?? "").length;
+    }
+    const density = text.length ? linkChars / text.length : 1;
+    cands.push({ el: el as unknown as Element, text, score: text.length * (1 - Math.min(density, 1)) });
+  }
+  if (cands.length === 0) return { text: blockText(document) };
+
+  cands.sort((a, b) => b.score - a.score);
+  // Ancestors and descendants of an already-kept block would repeat its text.
+  const kept: Cand[] = [];
+  for (const c of cands) {
+    if (kept.some((k) => k.el.contains(c.el) || c.el.contains(k.el))) continue;
+    kept.push(c);
+    if (kept.length >= 8) break;
+  }
+  // Document order, so the page reads the way it looks.
+  kept.sort((a, b) =>
+    a.el.compareDocumentPosition(b.el) & 4 /* FOLLOWING */ ? -1 : 1,
+  );
+  const joined = kept.map((k) => blockish(k.el)).join("\n\n");
+  return { text: tidy(joined).length > 0 ? joined : blockText(document) };
+}
+
+/** Flatten with separators at block boundaries — `textContent` runs words
+ * together ("Trip typeDeparture"), which then counts as a fraction of the words
+ * actually present and reads as gibberish. */
+function blockish(el: Element): string {
+  const BLOCK = new Set(["DIV","P","LI","TR","SECTION","ARTICLE","H1","H2","H3","H4","UL","OL","TABLE","BR"]);
+  const walk = (n: Element): string => {
+    let out = "";
+    for (const child of Array.from(n.childNodes) as Array<{ nodeType: number; textContent: string | null; tagName?: string }>) {
+      if (child.nodeType === 3) out += child.textContent ?? "";
+      else if (child.nodeType === 1) {
+        const brk = BLOCK.has((child.tagName ?? "").toUpperCase());
+        out += (brk ? "\n" : " ") + walk(child as unknown as Element) + (brk ? "\n" : " ");
+      }
+    }
+    return out;
+  };
+  return walk(el)
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 /** Section headings (h1–h3) in document order — the map an agent uses to pull a
  * specific part of a truncated read. Cheap (~80 tokens) and high-value. */
 export function getOutline(html: string): string[] {

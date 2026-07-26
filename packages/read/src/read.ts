@@ -13,6 +13,7 @@ import {
   countWords,
   documentTitle,
   fallbackExtract,
+  denseExtract,
   getOutline,
   hasScripts,
   rawText,
@@ -150,7 +151,20 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
   let text = primary.text;
   let extractor: Receipt["extractor"] = "readability";
   let words = countWords(text);
-  if (words < config.cleanWords && rawWords >= config.fallbackRaw) {
+  // A driven page is usually a LIST of records, not an article, and the
+  // article-shaped extractors pick one best container and flatten it — on a
+  // real results page that meant column headers and bare prices while the rows
+  // sat in the DOM. No `fallbackRaw` gate here: this tier has no rung above it,
+  // so there is nothing to escalate to and nothing to protect.
+  if (via === "session") {
+    const dense = denseExtract(html);
+    const dWords = countWords(dense.text);
+    if (dWords > words) {
+      text = dense.text;
+      words = dWords;
+      extractor = "fallback";
+    }
+  } else if (words < config.cleanWords && rawWords >= config.fallbackRaw) {
     const fb = fallbackExtract(html);
     const fbWords = countWords(fb.text);
     if (fbWords > words) {

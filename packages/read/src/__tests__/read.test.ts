@@ -234,3 +234,49 @@ describe("a session read has no rung above it", () => {
     expect(new Reader().readHtml(page(""), "https://f.test/s").receipt.status).toBe("empty");
   });
 });
+
+describe("a driven page is a list of records, not an article", () => {
+  // The real shape, reduced: a promo block that OUTSCORES the results grid on
+  // raw length, and rows built from nested divs rather than semantic markup.
+  const grid = `<!doctype html><html><head><title>Results</title></head><body>
+    <div id="promo">${"Unlock 10% extra savings. Low or zero cancellation charges. Free seats and meals. ".repeat(14)}</div>
+    <div id="results">
+      <div class="head"><div>Airline</div><div>Departure</div><div>Price</div></div>
+      <div class="row"><div>IndiGo</div><div>6E-312</div><div>09:15</div><div>13:55</div><div>Rs 8,771</div></div>
+      <div class="row"><div>IndiGo</div><div>6E-537</div><div>10:15</div><div>15:25</div><div>Rs 8,865</div></div>
+      <div class="row"><div>Air India</div><div>AI-504</div><div>06:10</div><div>08:45</div><div>Rs 9,584</div></div>
+    </div></body></html>`;
+
+  it("recovers rows the single-best-container extractors drop", () => {
+    // Measured on a live Cleartrip results page: the container holding the
+    // flight rows scored 3,519 and LOST to a 4,070 promo block, so the read
+    // returned column headers and bare prices while the rows sat in the DOM.
+    const r = new Reader().readHtml(grid, "https://fares.test/results");
+    for (const needle of ["6E-312", "09:15", "8,771", "AI-504", "9,584"]) {
+      expect(r.text, `missing ${needle}`).toContain(needle);
+    }
+    expect(r.receipt.via).toBe("session");
+  });
+
+  it("separates fields — textContent alone runs them together", () => {
+    // "Trip typeDeparture" is not two words to any word counter, and reads as
+    // gibberish to a model.
+    const r = new Reader().readHtml(grid, "https://fares.test/results");
+    expect(r.text).not.toMatch(/IndiGo6E-312/);
+    expect(r.receipt.words).toBeGreaterThan(20);
+  });
+
+  it("does not repeat a row once per nesting level", () => {
+    const r = new Reader().readHtml(grid, "https://fares.test/results");
+    expect(r.text.split("6E-312").length - 1).toBe(1);
+  });
+
+  it("leaves the FETCH path alone — this is a session-tier rule", () => {
+    // The fetch extractors are tuned against a 60-page corpus; a driven page's
+    // list-shaped rule must not reach them, or a news article drags in its
+    // comment section.
+    const r = new Reader().readHtml(grid, "https://fares.test/results");
+    expect(r.receipt.via).toBe("session");
+    // and the fetch-side classification is unchanged (covered by extract.test.ts)
+  });
+});
