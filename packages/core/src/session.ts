@@ -50,6 +50,9 @@ export interface Session {
   tokens: { worked: Set<string>; spent: Set<string> };
 }
 
+/** Chrome's ways of saying "that handle points at nothing now". */
+const STALE_HANDLE = /no longer in the document|detached from the document/i;
+
 export interface ActResult {
   ok: boolean;
   ms: number;
@@ -62,6 +65,10 @@ export interface ActResult {
   fired?: { method: string; url: string; status?: number };
   /** True when this taught the replay cache a new template. */
   learnedReplay?: boolean;
+  /** The page re-rendered under us and the node was found again by its stable
+   * id. Reported, not hidden: it means the page is churning, which is worth
+   * knowing before the next action. */
+  reResolved?: boolean;
   /** What a type/clear/select left in the field, read back from the page. A
    * field can reject or reformat input, and saying nothing about that is how a
    * wrong value travels downstream looking like a perception failure. */
@@ -281,11 +288,38 @@ export class SessionPool {
     }
 
     const before = s.graph;
+    let reResolved = false;
     // Anything already in flight is ambient; only what starts now is ours.
     s.recorder.markBaseline();
     const firedAfter = Date.now();
 
-    const dispatched = await dispatchAction(s.client, node.backendNodeId, action);
+    let dispatched = await dispatchAction(s.client, node.backendNodeId, action);
+
+    // A STALE HANDLE is not a missing node. The graph is a snapshot and
+    // `backendNodeId` only lives as long as that DOM node does, so a page that
+    // re-renders on its own — a calendar, a React list — leaves us holding a
+    // dead handle for an element that is still right there. Measured: a live
+    // agent ran veil_query, got `button-show-next-month`, clicked it
+    // immediately, and was told "the node is no longer in the document", four
+    // times across two sessions.
+    //
+    // The stable display id is exactly what survives this, so rebuild and try
+    // once more under the same id. Once, not in a loop: if it fails again the
+    // node really is gone.
+    if (!dispatched.ok && STALE_HANDLE.test(dispatched.detail ?? "")) {
+      try {
+        s.graph = (await buildGraph(s.client)).graph;
+        const fresh = s.graph.nodes.get(nodeId);
+        if (fresh?.backendNodeId !== undefined && fresh.backendNodeId !== node.backendNodeId) {
+          debugLog(`act: re-resolved ${nodeId} after a re-render`);
+          dispatched = await dispatchAction(s.client, fresh.backendNodeId, action);
+          if (dispatched.ok) reResolved = true;
+        }
+      } catch (err) {
+        debugLog("act: re-resolve failed", err);
+      }
+    }
+
     if (!dispatched.ok) {
       // "covered by <div class=...>" names the blocker but cannot be acted on.
       // Turn the overlay's dismiss controls into NODE IDS, which can be.
@@ -355,6 +389,7 @@ export class SessionPool {
       }),
       learnedReplay,
       ...(dispatched.value !== undefined && { value: dispatched.value }),
+      ...(reResolved && { reResolved: true }),
       noOp: isNoOp(diff) && !fired,
     };
   }

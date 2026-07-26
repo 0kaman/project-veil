@@ -93,6 +93,18 @@ const PAGE = `<!doctype html><html><head><title>Act fixture</title>
   </script>
 </body></html>`;
 
+/** A page that re-renders itself, the way a React calendar or a live list does:
+ * same labels, brand-new DOM nodes. Every `backendNodeId` the graph holds goes
+ * dead while the elements are still plainly there. */
+const CHURN_PAGE = `<!doctype html><html><head><title>Churn</title></head><body>
+  <div id="cal"><button id="next" aria-label="Show next month">Next</button></div>
+  <script>
+    setInterval(function(){
+      document.getElementById('cal').innerHTML =
+        '<button id="next" aria-label="Show next month">Next</button>';
+    }, 400);
+  </script></body></html>`;
+
 /** Google Flights' actual shape: opening the origin dialog aria-hides the WHOLE
  * rest of the page, so every other control correctly leaves the graph. Served on
  * its own route — sharing the main fixture entangled it with a `role="dialog"`
@@ -145,6 +157,11 @@ suite("veil_do — real Chrome (Layer 2)", () => {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
         });
+        return;
+      }
+      if (url.startsWith("/churn")) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(CHURN_PAGE);
         return;
       }
       if (url.startsWith("/dialog")) {
@@ -291,6 +308,40 @@ suite("veil_do — real Chrome (Layer 2)", () => {
       expect(open.lean).not.toMatch(/DIALOG OPEN/);
       const r = await pool.act(open.sessionId!, "textbox-origin", { kind: "type", value: "x" });
       expect(r.diff?.dialog).toBeUndefined();
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("RE-RESOLVES a node whose handle died in a re-render, and says it did", async () => {
+    // Measured live: an agent ran veil_query, got `button-show-next-month` back,
+    // clicked it immediately, and was told "the node is no longer in the
+    // document" — four times across two sessions. The graph is a snapshot and
+    // backendNodeId only lives as long as that DOM node; a self-re-rendering
+    // page leaves a dead handle for an element still plainly on screen. The
+    // stable display id is precisely what survives that.
+    const pool = new SessionPool({ capMs: 2500 });
+    try {
+      const open = await pool.open(`${base}/churn`);
+      expect(open.lean).toContain("button-show-next-month");
+      await new Promise((r) => setTimeout(r, 1200)); // let it churn
+
+      const r = await pool.act(open.sessionId!, "button-show-next-month", { kind: "click" });
+      expect(r.ok).toBe(true);
+      expect(r.reResolved).toBe(true); // and it is not a silent recovery
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("still refuses a node that is GENUINELY gone, rather than retrying forever", async () => {
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(base);
+      const r = await pool.act(open.sessionId!, "button-does-not-exist", { kind: "click" });
+      expect(r.ok).toBe(false);
+      expect(r.failure).toBe("not-found");
+      expect(r.reResolved).toBeFalsy();
     } finally {
       await pool.shutdown();
     }

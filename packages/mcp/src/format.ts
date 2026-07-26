@@ -129,6 +129,12 @@ export function renderAct(node: string, action: string, r: ActResult): string {
   // typed, and a silent divergence there reads as someone else's bug later.
   const got = r.value !== undefined ? ` · value=${JSON.stringify(r.value)}` : "";
   const parts = [`via: engine · ${r.ms}ms · ${action} ${node} ok${got}${settleNote}`];
+  if (r.reResolved) {
+    parts.push(
+      `note: the page re-rendered and ${node} was found again by its stable id — ` +
+        `this page is churning, so re-query before relying on older ids.`,
+    );
+  }
 
   if (r.fired) {
     parts.push(
