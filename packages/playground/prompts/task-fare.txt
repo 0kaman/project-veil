@@ -15,6 +15,11 @@ Rules:
 - Do not invent or estimate a number. If you cannot get a real fare for that exact
   date, say you could not, and say precisely where you got stuck.
 
+If you find PART of the answer, keep it. Say what you have and what is still
+missing, rather than discarding it and starting again somewhere else. A fare for
+the right date with no airline attached is worth more than nothing, and you should
+report it as exactly that. Do not abandon a partial result silently.
+
 When you have an answer - or have concluded you cannot get one - stop and report:
 
 - The fare, the airline, and the departure time, with the URL you took it from.
