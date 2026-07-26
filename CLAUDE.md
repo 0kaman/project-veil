@@ -4,31 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Veil decomposes webpages into **Behavior Graphs** — what a page *does* (interactive
-nodes, their event handlers, the API calls those fire, semantic labels), not what it
-*looks like*. It is a perception format for LLM agents: 3,000–10,000 DOM nodes → 50–300
-behavior nodes.
+Veil is an **AI-first browser**: it perceives the web *for* an agent, with no human
+looking and no pixels rendered. The bet is that **a browser is a fallback, not a
+foundation** — booting Chrome costs ~969 MB and ~2s before a single byte is read, so
+every task starts as HTTP and the engine is summoned only when it must be.
 
 Read `docs/ARCHITECTURE.md` (as-built design) and `docs/DECISIONS.md` (dated log of why
 things are the way they are) before any non-trivial change. DECISIONS.md exists
 specifically so choices don't get re-litigated — check it before "fixing" something that
-looks odd; it's usually deliberate and the row explains why.
+looks odd; it's usually deliberate and the row explains why. Several rows also record
+things that were tried and **withdrawn**, with the measurement that killed them.
+
+> **This tree is the 2026-07-15 reboot.** v1's source was deleted and rebuilt; it is
+> preserved in git at `9e9f3e0`. `@veil/sdk`, `@veil/server` and `@veil/cli` are gone —
+> don't reintroduce references to them.
 
 ## Commands
 
 ```bash
 pnpm build              # turbo build, all packages
 pnpm typecheck          # tsc --noEmit gate (tsup strips types WITHOUT checking them)
-pnpm check              # typecheck + build + test — what CI runs
+pnpm check              # typecheck + build + test — the full gate
 pnpm test               # Layer 1: hermetic, no Chrome, fast
 pnpm test:integration   # Layer 2: real headless Chrome vs local fixtures (auto-skips w/o Chrome)
-pnpm test:live          # Layer 3: real internet (example/github/MDN), gated on VEIL_LIVE=1
-node packages/core/bench/replay-benchmark.mjs   # direct-replay vs simulated-click benchmark
 
-pnpm play "open https://github.com/login and find the sign-in button"
-                        # LLM-driven playground; step-gated. Needs MISTRAL_API_KEY in .env
-                        # and `pnpm build` first (it spawns the real MCP server).
+pnpm --filter @veil/core bench:replay        # replay vs the click it replaces
+pnpm --filter @veil/playground bench:prune   # history pruning, replayed over recorded traces
+
+pnpm play --auto --max-steps 60 --prompt-file packages/playground/prompts/task-fare.txt
+                        # LLM-driven playground. Needs MISTRAL_API_KEY in .env and
+                        # `pnpm build` first (it spawns the real MCP server).
                         # Traces every hop to traces/<ts>.trace.jsonl.
+pnpm play:analyse       # escalation metric over traces/episodes.jsonl
 ```
 
 **Running a single test** — `pnpm --filter @veil/core test -- prune` does **not** filter;
@@ -38,96 +45,98 @@ Use `exec`:
 ```bash
 pnpm --filter @veil/core exec vitest run prune       # by filename pattern
 pnpm --filter @veil/core exec vitest run -t "budget" # by test name
+pnpm --filter @veil/core exec vitest run --config vitest.integration.config.ts act
 ```
 
-Requires **Node ≥ 22** (the CDP client uses global `WebSocket`; older Node crashes at
-connect), **pnpm ≥ 10**, and Chrome/Chromium (auto-detected, override with `CHROME_PATH`).
+Requires **Node ≥ 22** (the CDP client uses global `WebSocket`), **pnpm ≥ 10**, and
+Chrome/Chromium for the act path (auto-detected, override with `CHROME_PATH`).
 
 ## Architecture
 
-A pnpm + turbo monorepo, three packages:
+A pnpm + turbo monorepo:
 
 | package | role |
 |---|---|
-| `@veil/core` | The engine. Browser runtime (raw CDP), 5-stage pipeline, graph model + serializers. **Zero runtime dependencies** — keep it that way. |
-| `@veil/mcp` | **The prime interface.** stdio MCP server; 8 tools (`veil_open/graph/do/replay/query/auth/sessions/close`). |
-| `@veil/cli` | Dev/debug tool. Background daemon holds Chrome alive; thin client drives it. |
-| `@veil/playground` | Ink terminal harness: an LLM (Mistral) drives Veil over the **real** MCP server, with every hop traced. This is where you reproduce "the agent can't drive this page". See its README. |
+| `@veil/search` | Brave API → links + snippets. Not content. Zero deps. |
+| `@veil/read` | fetch → extract → prose, **no browser**. Escalates to a render only on evidence. |
+| `@veil/core` | The engine. Raw CDP, session pool, behavior graph, act + replay. **Zero runtime dependencies** — keep it that way. |
+| `@veil/mcp` | **The prime interface.** stdio MCP server; 8 tools. |
+| `@veil/playground` | Ink terminal harness: an LLM (Mistral) drives Veil over the **real** MCP server, every hop traced. This is where you reproduce "the agent can't drive this page". |
 
-`@veil/mcp` and `@veil/cli` are **thin skins over the identical `Veil` / `VeilPage`
-core — neither forks behavior.** Fix things in core, not in a skin.
+### The ladder
 
-### The pipeline
+Each rung is tried before the one below it, and the receipt always says which ran.
 
-`VeilPage.buildGraph()` in `packages/core/src/index.ts` is the spine — read it first; it
-wires all five stages in order and is where the whole system is legible:
+| rung | how | when |
+|---|---|---|
+| **SEARCH** | Brave | always first — snippets often answer outright |
+| **READ** | fetch → linkedom → readability | a snippet isn't enough |
+| **ACT** | Chrome + CDP + AX tree | you must click, type, or learn behaviour |
+| **REPLAY** | captured request template | you've acted here once before |
 
-1. **Stage 1** (`stage-1-axtree.ts`) — Accessibility tree → `BehaviorNode`s. The AX tree
-   is the skeleton, *not* the DOM. `enrichStructuralEvents` synthesizes click/submit
-   events from `href`/`action` for server-rendered pages Stage 2 leaves event-less.
-2. **Stage 2** (`stage-2-events.ts`) — `DOMDebugger.getEventListeners` + a React Fiber
-   walk (React uses event delegation, so listeners live on the root, not the element).
-   Parallel batches of 20.
-3. **Stage 3** (`stage-3-network.ts`) — correlates captured requests to the node that
-   fired them via async initiator stack frames.
-4. **Stage 4** (`stage-4-components.ts`) — React Fiber grouping, or vanilla heuristics.
-5. **Stage 5** (`stage-5-semantics.ts`) — heuristic labels, then an **optional** pluggable
-   LLM enricher for ambiguous nodes. Heuristics alone are a complete offline Stage 5;
-   the enricher never blocks a build and never downgrades a heuristic label.
+`veil_read` also accepts an **open session id** — after `veil_do` drives a form to a
+results page, the answer is prose that lives only in that tab.
 
-Then `pruneToNodeBudget()` drops low-value bulk links — deliberately **after** events and
-semantics are known, so behavioral nodes are never the ones cut.
+### The act path
 
-### Two execution tiers
+`SessionPool` in `packages/core/src/session.ts` is the spine — read it first.
 
-- `interact()` — simulates the real DOM interaction, returns a **rebuilt graph**.
-- `replay()` — fires a *captured* request template directly through the page's own fetch
-  (inherits cookies/session/CSRF), returns the **API response, not a graph**. Up to 121×
-  faster. A raw request changes server state; it does not drive the app's DOM.
-- `execute(mode: auto|direct|simulate)` — `auto` picks direct when a template exists.
-
-The `capturedRequests` replay cache is deliberately kept **out of the serialized graph**
-(it's a replay cache, not perception). Interactions *teach* it their request the first
-time they fire, via the incremental-update path.
+- **`graph/`** — the behavior graph. AX tree → stable display ids → doers-first
+  projection. `pipeline/stage-1-axtree.ts` (skeleton) and `stage-2-events.ts` (event
+  binding, including a React Fiber walk, because React delegates to the root and
+  `DOMDebugger.getEventListeners` returns `[]` on the element).
+- **`browser/settle.ts`** — settled ⟺ young-network-idle AND actionable-surface stable.
+- **`browser/interact.ts`** — actionability checks that refuse *with a reason*.
+- **`browser/capture.ts`** — network capture with ambient-baseline filtering.
+- **`browser/replay.ts`** — fire a captured request directly, refreshing tokens at fire
+  time. Gated by `config.ts` — that gate is a **security boundary**, not a feature flag.
 
 ### Things that will bite you
 
-- **`interact()` has three navigation branches** — hard nav (`frameNavigated` → wait for
-  load event), soft SPA nav (`navigatedWithinDocument`; **no load event ever fires** —
-  waiting for one stalls the full 10s grace timer), and no-nav (incremental update, full
-  rebuild on failure). Subframe navigations must never trigger a rebuild.
-- **Node ids are dual.** `resolveNode()` accepts internal AX ids *and* content-derived
-  stable display ids. Chrome reassigns internal AX ids every run; display ids are what
-  agents and tests should use.
+- **The graph is a snapshot.** `backendNodeId` lives only as long as that DOM node, so a
+  self-re-rendering page leaves dead handles. `act()` re-resolves once by stable display
+  id and reports `reResolved`.
+- **Node ids are dual.** `resolveNode()` takes internal AX ids *and* content-derived
+  display ids. Chrome reassigns AX ids every run; display ids are what agents and tests
+  should use.
+- **Every session thinks it's the front tab, but only one is.** Chrome starves
+  backgrounded renderers — sessions enable `Emulation.setFocusEmulationEnabled` or mouse
+  input blocks for 5s+ on a compositor ack that never comes.
 - **This codebase swallows failures on purpose** — dropped CDP frames, React-detection
-  fallbacks, enricher errors, mutation-watcher startup. That's degradation-by-design, not
-  sloppiness. Set **`VEIL_DEBUG=1`** to surface them on stderr instead of guessing.
-- **`turbo test` depends on `^build`**, and `pnpm veil` runs `packages/cli/dist/` — build
-  before running the CLI.
-- **The CLI daemon is long-lived.** After a rebuild, `pnpm veil daemon stop` or you'll be
-  debugging stale code.
+  fallbacks, mutation-watcher startup. That's degradation-by-design. Set **`VEIL_DEBUG=1`**
+  to surface them on stderr instead of guessing.
+- **`turbo test` depends on `^build`** — build before running anything that spawns the
+  MCP server, including the playground.
 
-Env vars (session limits, timeouts, node budget, settle tuning, enricher config) are
-tabulated in `docs/RUNBOOK.md`.
+Env vars are tabulated in `docs/RUNBOOK.md`.
 
 ## Conventions
 
 - **Docs are load-bearing.** ARCHITECTURE.md states plainly: *"Drift between doc and code
   is a bug."* A design change means updating `docs/ARCHITECTURE.md` **and** appending a
   dated row to `docs/DECISIONS.md` (newest first, with the why and where).
-- **Two-layer test discipline.** Pipeline/model logic gets a hermetic Layer-1 test driving
-  `FakeCDPClient` (`src/__tests__/fixtures/fake-cdp.ts`). Anything wire-level, timing-, or
-  interaction-dependent needs a Layer-2 test in `packages/core/integration/` against a
-  local fixture — the fake cannot catch those.
-- Errors thrown as `VeilError` with a typed `VeilErrorCode` (`NODE_NOT_FOUND`,
-  `NODE_NOT_INTERACTIVE`, `INTERACTION_FAILED`, `NO_CAPTURE`, `REPLAY_FAILED`). MCP tool
-  errors return as clean MCP error *results* so an agent can read and recover — never as
-  protocol failures.
+- **Measure, don't assert.** Every number in the docs is measured, and a claim that turns
+  out wrong gets **withdrawn in writing** rather than quietly dropped. Several DECISIONS
+  rows exist only to record a retraction and the evidence behind it.
+- **The receipt principle / no silent degradation.** Every tool result leads with a
+  receipt — path, cost, status, what's missing — before any content. A refusal must name
+  the recovery, and that recovery must actually be reachable.
+- **An affordance belongs on the node, not only in the tool description.** An agent
+  decides *what to do* from the graph, then reaches for a tool; a capability that exists
+  only in a tool schema is invisible at the moment of the decision.
+- **Two-layer test discipline.** Pipeline/model logic gets a hermetic Layer-1 test.
+  Anything wire-level, timing- or interaction-dependent needs a Layer-2 test in
+  `packages/core/integration/` against a local fixture — the fake cannot catch those.
+- **State that accumulates across calls needs a LOOP test and a test per SCHEME it
+  models.** A fixture implementing one scheme, exercised one iteration, cannot fail.
+  Three separate defects shipped past a suite that did exactly that.
+- Errors thrown as `VeilError` with a typed `VeilErrorCode`. MCP tool errors return as
+  clean MCP error *results* so an agent can read and recover — never as protocol failures.
 - ESM throughout; relative imports carry the `.js` extension.
 
 ## Known gaps
 
-Cross-origin iframes (OOPIF) are not captured at all — an empty/wrong graph on a real site
-is often this. Anti-bot stealth is shallow. Semantic heuristics are English-only (the
-enricher is the multilingual path). See the "Open / scoped future work" section of
-`docs/DECISIONS.md`.
+Cross-origin iframes (OOPIF) are not captured — an empty/wrong graph on a real site is
+often this. Anti-bot stealth is shallow; flight/travel aggregators defeat the browser
+outright. Semantic heuristics are English-only. See the "Open / scoped future work"
+section of `docs/DECISIONS.md`.

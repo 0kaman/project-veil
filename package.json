@@ -8,13 +8,13 @@
     "test": "turbo test",
     "test:watch": "turbo test:watch",
     "clean": "turbo clean",
-    "veil": "node packages/cli/dist/index.js",
     "typecheck": "turbo typecheck",
     "test:integration": "pnpm --filter @veil/core test:integration",
     "check": "turbo typecheck build test",
-    "test:live": "VEIL_LIVE=1 pnpm --filter @veil/core test:integration",
     "play": "pnpm --filter @veil/playground dev",
-    "play:analyse": "pnpm --filter @veil/playground analyse"
+    "play:analyse": "pnpm --filter @veil/playground analyse",
+    "bench:replay": "pnpm --filter @veil/core bench:replay",
+    "bench:prune": "pnpm --filter @veil/playground bench:prune"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
