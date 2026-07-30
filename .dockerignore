@@ -1,0 +1,21 @@
+# The arena build context is the repo root, so without this Docker uploads every
+# node_modules tree and the whole trace archive before it starts — minutes of
+# nothing, on every rebuild.
+node_modules
+**/node_modules
+.git
+traces
+docs
+.turbo
+**/.turbo
+**/*.tsbuildinfo
+.env
+*.log
+
+# Source and tests are not needed: the image runs built dist output only.
+**/src
+**/integration
+**/__tests__
+**/bench
+packages/playground
+packages/cli

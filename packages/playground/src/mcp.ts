@@ -38,22 +38,30 @@ export class VeilMcp {
   private transport: StdioClientTransport | null = null;
   private tools: ToolSchema[] = [];
 
+  /** How to launch the server. A bare path keeps the original `node <path>`
+   * behaviour; a {command,args} pair lets the arena point at ANY stdio MCP
+   * server — including a contender running inside a container via docker exec. */
+  private readonly spawn: { command: string; args: string[] };
+
   constructor(
-    private readonly serverPath: string,
+    server: string | { command: string; args: string[] },
     private readonly tracer: Tracer,
-  ) {}
+  ) {
+    this.spawn =
+      typeof server === "string" ? { command: process.execPath, args: [server] } : server;
+  }
 
   async connect(): Promise<ToolSchema[]> {
     const t0 = Date.now();
     this.transport = new StdioClientTransport({
-      command: process.execPath,
-      args: [this.serverPath],
+      command: this.spawn.command,
+      args: this.spawn.args,
       env: Object.fromEntries(
         Object.entries(process.env).filter(([, v]) => v !== undefined),
       ) as Record<string, string>,
       stderr: "pipe",
     });
-    this.client = new Client({ name: "veil-playground", version: "0.1.0" }, { capabilities: {} });
+    this.client = new Client({ name: "veil-harness", version: "0.1.0" }, { capabilities: {} });
     await this.client.connect(this.transport);
 
     this.transport.stderr?.on("data", (chunk: Buffer) => {

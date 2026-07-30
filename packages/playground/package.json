@@ -14,7 +14,11 @@
     "clean": "rm -rf dist",
     "analyse": "tsx src/analyse.ts",
     "test": "vitest run",
-    "bench:prune": "tsx bench/prune-benchmark.ts"
+    "bench:prune": "tsx bench/prune-benchmark.ts",
+    "arena": "tsx arena/run.ts",
+    "arena:up": "docker compose -f arena/docker/docker-compose.yml up -d --build",
+    "arena:down": "docker compose -f arena/docker/docker-compose.yml down -v",
+    "arena:preflight": "tsx arena/preflight.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

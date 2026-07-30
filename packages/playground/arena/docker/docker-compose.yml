@@ -1,0 +1,77 @@
+# The arena.
+#
+# Three services on one private network:
+#   fixtures  — deterministic pages both contenders drive
+#   veil      — our MCP server + its Chromium
+#   pinchtab  — their server + its Chrome
+#
+# Neither contender is installed on the host. PinchTab's published install path
+# is `curl … | bash`, which has no business touching a laptop we care about.
+#
+# Both are spawned identically by the harness:
+#   docker exec -i arena-veil     node /app/packages/mcp/dist/server.js
+#   docker exec -i arena-pinchtab pinchtab mcp
+# so the only asymmetry left is the tool itself.
+
+name: veil-arena
+
+services:
+  fixtures:
+    image: node:22-bookworm-slim
+    container_name: arena-fixtures
+    working_dir: /srv
+    volumes:
+      - ../fixtures:/srv:ro
+    command: ["node", "/srv/server.mjs"]
+    environment:
+      PORT: "8080"
+    networks: [arena]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  veil:
+    build:
+      context: ../../../..            # repo root — the workspace is the build context
+      dockerfile: packages/playground/arena/docker/Dockerfile.veil
+    container_name: arena-veil
+    depends_on:
+      fixtures: { condition: service_healthy }
+    environment:
+      CHROME_PATH: /usr/bin/chromium
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      VEIL_DEBUG: "1"
+      # Same ceiling as PinchTab gets by default — neither is handed more room.
+      VEIL_MEMORY_BUDGET_MB: "2000"
+    # Chrome needs more than the default 64MB of shared memory or it crashes
+    # rendering large pages. PinchTab's own docs set the same.
+    shm_size: 2gb
+    networks: [arena]
+    # Chrome sandboxing needs these; without them it silently falls back and
+    # gets slower, which would look like a Veil result rather than a container one.
+    security_opt: ["seccomp=unconfined"]
+    cap_add: ["SYS_ADMIN"]
+
+  pinchtab:
+    image: pinchtab/pinchtab:latest
+    container_name: arena-pinchtab
+    depends_on:
+      fixtures: { condition: service_healthy }
+    # Loopback-published only. Their docs are emphatic that the API is a
+    # privileged operator surface, and they are right.
+    ports: ["127.0.0.1:9867:9867"]
+    volumes:
+      - pinchtab-data:/data
+    shm_size: 2gb
+    networks: [arena]
+    security_opt: ["seccomp=unconfined"]
+    cap_add: ["SYS_ADMIN"]
+
+networks:
+  arena:
+    driver: bridge
+
+volumes:
+  pinchtab-data:
