@@ -159,6 +159,16 @@ suite("veil_do — real Chrome (Layer 2)", () => {
         });
         return;
       }
+      if (url.startsWith("/select")) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(`<!doctype html><html><head><title>Sel</title></head><body>
+          <select id="size" aria-label="Size">
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </select></body></html>`);
+        return;
+      }
       if (url.startsWith("/churn")) {
         res.writeHead(200, { "content-type": "text/html" });
         res.end(CHURN_PAGE);
@@ -342,6 +352,36 @@ suite("veil_do — real Chrome (Layer 2)", () => {
       expect(r.ok).toBe(false);
       expect(r.failure).toBe("not-found");
       expect(r.reResolved).toBeFalsy();
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("SELECTS by visible label, not just by value attribute", async () => {
+    // Found by the arena, not by this suite. The graph shows an option's LABEL
+    // ("Small"), so an agent passes "Large" — but the value attribute is
+    // "large". Assigning an unmatched string to a <select> silently yields "",
+    // so Veil reported ok while selecting nothing and the form submitted with
+    // the field absent. It lost a benchmark task it should have drawn.
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(`${base}/select`);
+      const r = await pool.act(open.sessionId!, "combobox-size", { kind: "select", value: "Large" });
+      expect(r.ok).toBe(true);
+      expect(r.value).toBe("large"); // the VALUE attribute, set from the label
+    } finally {
+      await pool.shutdown();
+    }
+  }, 90_000);
+
+  it("REFUSES a select with no matching option, naming the real choices", async () => {
+    const pool = new SessionPool({ capMs: 4000 });
+    try {
+      const open = await pool.open(`${base}/select`);
+      const r = await pool.act(open.sessionId!, "combobox-size", { kind: "select", value: "Enormous" });
+      expect(r.ok).toBe(false);
+      expect(r.detail).toMatch(/no option matches/i);
+      expect(r.detail).toMatch(/Small|Medium|Large/);
     } finally {
       await pool.shutdown();
     }

@@ -279,15 +279,62 @@ export async function dispatchAction(
         await pressEnter(client);
         break;
       }
-      case "select":
-        await callOn(
+      case "select": {
+        // Match by VALUE or by visible LABEL, case-insensitively.
+        //
+        // The graph shows an option's LABEL (`combobox-size [combobox] ="Small"`),
+        // so an agent naturally passes "Large" — but the option's value attribute
+        // is "large". Assigning an unmatched string to a <select> silently sets
+        // `.value` to "", so the old code reported ok while selecting nothing and
+        // the form submitted with the field absent. Found by the arena: Veil lost
+        // a task it should have drawn, and its own value-echo receipt showed
+        // `value=""` on an action it had called ok.
+        const raw = (await callOn(
           client,
           objectId,
-          `function(){ this.value = ${JSON.stringify(action.value ?? "")};
+          `function(){
+             var want = ${JSON.stringify(action.value ?? "")};
+             var norm = function(s){ return String(s == null ? "" : s).trim().toLowerCase(); };
+             var opts = this.options ? Array.prototype.slice.call(this.options) : [];
+             var hit = null;
+             for (var i = 0; i < opts.length; i++) {
+               if (norm(opts[i].value) === norm(want)) { hit = opts[i]; break; }
+             }
+             if (!hit) {
+               for (var j = 0; j < opts.length; j++) {
+                 if (norm(opts[j].text) === norm(want)) { hit = opts[j]; break; }
+               }
+             }
+             if (!hit) {
+               return JSON.stringify({ ok:false,
+                 options: opts.slice(0, 12).map(function(o){ return o.text || o.value; }) });
+             }
+             this.value = hit.value;
              this.dispatchEvent(new Event('input', {bubbles:true}));
-             this.dispatchEvent(new Event('change', {bubbles:true})); return "ok"; }`,
-        );
+             this.dispatchEvent(new Event('change', {bubbles:true}));
+             return JSON.stringify({ ok:true });
+           }`,
+        )) ?? "";
+        let verdict: { ok?: boolean; options?: string[] } = {};
+        try {
+          verdict = JSON.parse(raw) as typeof verdict;
+        } catch {
+          /* non-select element — fall through as a plain success */
+          verdict = { ok: true };
+        }
+        if (verdict.ok === false) {
+          // A refusal that names the real choices, rather than a false ok.
+          return {
+            ok: false,
+            failure: "dispatch-failed",
+            detail:
+              `no option matches ${JSON.stringify(action.value ?? "")}` +
+              (verdict.options?.length ? ` — available: ${verdict.options.join(", ")}` : ""),
+            at,
+          };
+        }
         break;
+      }
     }
     // Read back what the field ended up holding, for the receipt.
     let value: string | undefined;
