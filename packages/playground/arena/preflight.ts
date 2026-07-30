@@ -95,6 +95,28 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── secrets actually INSIDE the contender ───────────────────────────────
+  // Compose interpolates ${VAR} from the shell, so an unexported key yields an
+  // empty string and the container starts perfectly happily with a dead tier.
+  // That is exactly what happened on the first full run: Veil's search rung was
+  // disabled for all 80 runs and two tasks were scored against it.
+  if (!fatal) {
+    say("");
+    const n = sh("docker", [
+      "exec",
+      "arena-veil",
+      "sh",
+      "-lc",
+      "printf %s ${#BRAVE_API_KEY}",
+    ]);
+    if (/^[1-9]/.test(n)) say(ok(`veil      BRAVE_API_KEY present in container (${n} chars)`));
+    else {
+      say(bad("veil      BRAVE_API_KEY is EMPTY in the container — its search tier is dead"));
+      say("            fix: pnpm --filter @veil/playground arena:up   (sources .env)");
+      fatal++;
+    }
+  }
+
   // ── MCP handshake + the free result: schema cost ────────────────────────
   if (!fatal) {
     say("");

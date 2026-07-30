@@ -16,7 +16,7 @@
     "test": "vitest run",
     "bench:prune": "tsx bench/prune-benchmark.ts",
     "arena": "tsx arena/run.ts",
-    "arena:up": "docker compose -f arena/docker/docker-compose.yml up -d --build",
+    "arena:up": "set -a && . ../../.env && set +a && docker compose -f arena/docker/docker-compose.yml up -d --build",
     "arena:down": "docker compose -f arena/docker/docker-compose.yml down -v",
     "arena:preflight": "tsx arena/preflight.ts"
   },

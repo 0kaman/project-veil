@@ -41,6 +41,11 @@
 > tokens across an entire run, so the doers-first graph is not the expense — prose
 > is.
 >
+> **Benchmarked head-to-head against PinchTab** (2026-07-31): slightly more tasks
+> answered for a **quarter of the tokens** (789k vs 3.14M over 61 runs), and a clean
+> loss on same-origin **iframe** content, 0/5 vs 5/5 — Veil reads only the top frame's
+> AX tree. Method, full table and caveats in `docs/ARENA.md`.
+>
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
 > from design-time probes, or now from the built code.
