@@ -63,6 +63,16 @@ export async function launchBrowser(options?: LaunchOptions): Promise<BrowserHan
     "--disable-sync",
     "--metrics-recording-only",
     "--disable-blink-features=AutomationControlled",
+    // Containers. Chrome refuses to start as root without --no-sandbox, and
+    // inside a container that is the normal case — so Veil simply could not run
+    // in Docker before this, which is a capability gap next to tools that ship
+    // an image. Gated on an env var rather than always-on, because dropping the
+    // sandbox on a developer's own machine would be a security regression for
+    // no benefit: the sandbox is a real defence when Chrome renders hostile
+    // pages, which is exactly what Veil does.
+    ...(process.env.VEIL_NO_SANDBOX === "1"
+      ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+      : []),
     // Chrome suspends requestAnimationFrame and throttles timers in tabs that
     // are not in front. We hold SEVERAL sessions at once and every one of them
     // is "in front" as far as an agent is concerned. Measured before these were

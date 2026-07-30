@@ -45,6 +45,9 @@ services:
       VEIL_DEBUG: "1"
       # Same ceiling as PinchTab gets by default — neither is handed more room.
       VEIL_MEMORY_BUDGET_MB: "2000"
+      # Chrome cannot start as root in a container without this. PinchTab's
+      # image makes the same concession internally; neither is advantaged.
+      VEIL_NO_SANDBOX: "1"
     # Chrome needs more than the default 64MB of shared memory or it crashes
     # rendering large pages. PinchTab's own docs set the same.
     shm_size: 2gb
