@@ -34,12 +34,32 @@ async function main(): Promise<void> {
 
   registerVeilTools(server, { search: new Search(), reader, sessions });
 
+  // Idempotent: stdin EOF and a signal can both arrive, and reaping twice
+  // races the browser teardown.
+  let closing = false;
   const shutdown = async () => {
+    if (closing) return;
+    closing = true;
     await Promise.allSettled([renderer.close(), sessions.shutdown()]);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+  process.on("SIGHUP", shutdown);
+
+  // THE TRANSPORT IS STDIN. When it ends, the client is gone and this process
+  // has nothing left to serve — so it must reap its browsers and exit.
+  //
+  // Signals are not enough, and the arena proved it at scale. A client that
+  // disconnects without sending one — `docker exec -i` dropping its pipe, a
+  // client killed with SIGKILL, a crashed parent — leaves stdin at EOF and no
+  // signal at all. Measured: 80 benchmark runs left 80 orphaned node processes
+  // holding 462 Chromium processes and 7.1 GiB of the container's 7.7 GiB, at
+  // which point Chrome could no longer start and three tasks failed with
+  // "browser launch timed out" — read as capability failures until the
+  // container was inspected. ~900 MB leaked per disconnect.
+  process.stdin.on("end", shutdown);
+  process.stdin.on("close", shutdown);
   process.on("uncaughtException", (err) => {
     process.stderr.write(`veil-mcp uncaught: ${err?.stack ?? err}\n`);
     // Reap BOTH browsers — Chrome is a non-detached child, so a crash that

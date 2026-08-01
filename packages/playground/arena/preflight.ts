@@ -122,6 +122,35 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── THE CONTAINERS MUST START THE ROUND EMPTY ───────────────────────────
+  // Round 4 was voided by this. Veil's MCP server did not reap its browser on
+  // stdin EOF, so every run left a node process holding a Chrome tree: by cell
+  // ~30 the container was at 7.1 GiB of 7.7 GiB with 462 Chromium processes,
+  // Chrome could no longer start, and three tasks failed with "browser launch
+  // timed out" — which reads exactly like a capability failure in the results
+  // table. The leak is fixed, but a benchmark that cannot see its own machine
+  // running out of memory will be fooled by the next one.
+  if (!fatal) {
+    say("");
+    for (const c of CONTENDERS) {
+      const procs = Number(
+        sh("docker", ["exec", c.container, "sh", "-lc", "ps -e -o comm= | grep -ciE 'chrom' || true"]),
+      );
+      const mem = sh("docker", [
+        "stats", "--no-stream", "--format", "{{.MemPerc}}", c.container,
+      ]).replace("%", "");
+      const pct = Number(mem);
+      // A contender with a persistent daemon legitimately holds a browser; one
+      // spawned per run should hold none. Report both, fail on the memory.
+      const note = `${c.name.padEnd(9)} ${procs} chrome proc(s) · ${pct.toFixed(1)}% memory`;
+      if (pct >= 60) {
+        say(bad(`${note} — START THE ROUND CLEAN or it will fail as "timed out"`));
+        say(`            fix: docker restart ${c.container}`);
+        fatal++;
+      } else say(ok(note));
+    }
+  }
+
   // ── BOTH CONTENDERS UNGATED ─────────────────────────────────────────────
   // The check that did not exist, and its absence is why round 1 was void:
   // PinchTab blocked 36 of 41 runs on its allowlist, and preflight reported
