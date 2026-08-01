@@ -27,6 +27,7 @@ import { Mistral } from "../src/mistral.js";
 import { AgentSession, type SessionDeps } from "../src/agent.js";
 import { TASKS, type Task } from "./tasks.js";
 import { Live, render } from "./live.js";
+import { execFileSync } from "node:child_process";
 import { loadEnv } from "../src/config.js";
 
 interface Contender {
@@ -81,6 +82,56 @@ const schemaCost = (tools: Array<{ name: string; description: string; parameters
       0,
     ) / 4,
   );
+
+
+/**
+ * Give every run an identical cold start.
+ *
+ * BOTH contenders degrade over a long session, in different ways, and both
+ * corrupted a round before this existed:
+ *
+ *   · Veil leaked a ~900 MB Chrome tree per run because its MCP server did not
+ *     reap on stdin EOF. 80 runs reached 7.1 GiB of 7.7 GiB and Chrome stopped
+ *     starting. Fixed in the server — but the harness must not depend on that.
+ *   · PinchTab's daemon stopped answering its own CLI after ~120 cumulative
+ *     runs (`Post http://127.0.0.1:9867/tabs/…/navigate: Client.Timeout
+ *     exceeded while awaiting headers`), while its container looked healthy at
+ *     278 MB. A restart cleared it.
+ *
+ * Both failures surface in the results table as "cannot reach the page", which
+ * is indistinguishable from a capability failure unless someone goes and looks
+ * at the machine. Resetting per run makes runs independent, which is what the
+ * median and spread already assume.
+ *
+ * This measures per-task capability on a clean process, NOT endurance. Endurance
+ * is a real and separate property — worth measuring deliberately one day, not by
+ * accident and not while calling it something else.
+ */
+function resetContenders(live?: Live): void {
+  const sh = (args: string[], timeout = 120_000): string => {
+    try {
+      return execFileSync("docker", args, { encoding: "utf8", timeout }).trim();
+    } catch {
+      return "";
+    }
+  };
+  for (const c of ["arena-veil", "arena-pinchtab"]) sh(["restart", c], 180_000);
+
+  // Wait for readiness rather than sleeping a guessed constant: pinchtab
+  // publishes a healthcheck, veil is idle until something execs into it.
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    const veilUp = sh(["inspect", "-f", "{{.State.Running}}", "arena-veil"]) === "true";
+    const health = sh(["inspect", "-f", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", "arena-pinchtab"]);
+    const ptReady = health === "healthy" || health === "none";
+    if (veilUp && ptReady) break;
+    if (Date.now() > deadline) {
+      live?.note(`containers not ready after 90s (veil=${veilUp} pinchtab=${health}) — continuing anyway`);
+      break;
+    }
+    execFileSync("sleep", ["2"]);
+  }
+}
 
 async function runOnce(c: Contender, task: Task, run: number, apiKey: string, live: Live): Promise<RunResult> {
   const tracer = new Tracer(OUT);
@@ -205,6 +256,10 @@ async function main(): Promise<void> {
 
   // Interleaved: every contender sees the same conditions for a given task+run.
   outer: for (let run = 1; run <= RUNS; run++) {
+    // Before EVERY run, not just the first: the leak that voided a round grew
+    // across cells, so a single reset at the start would have hidden it again.
+    process.stdout.write(`\n  · resetting both contenders for run ${run}…\n`);
+    resetContenders(live);
     for (const task of tasks) {
       for (const c of CONTENDERS) {
         if (spent >= BUDGET) {
