@@ -43,8 +43,14 @@
 >
 > **Benchmarked head-to-head against PinchTab** (2026-07-31): slightly more tasks
 > answered for a **quarter of the tokens** (789k vs 3.14M over 61 runs), and a clean
-> loss on same-origin **iframe** content, 0/5 vs 5/5 — Veil reads only the top frame's
-> AX tree. Method, full table and caveats in `docs/ARENA.md`.
+> loss on same-origin **iframe** content, 0/5 vs 5/5 — Veil read only the top frame's
+> AX tree. Method, full table and caveats in `docs/ARENA.md`. **The perception half
+> of that loss is fixed as of 2026-08-01** (DECISIONS): every frame in the page's
+> own renderer process — same-origin *and* cross-origin-same-site — is now walked,
+> spliced into the graph and into the serialized HTML, and its controls are
+> clickable. Cross-**site** frames (OOPIF) are still not reachable; they are now
+> counted and named instead of being silently absent. **The arena has not been
+> re-run, so the 0/5 stands as the last measured number.**
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,
@@ -336,7 +342,17 @@ changes.
   (long-lived connections no longer pin it). `domQuiet` remains unreachable on
   animated pages — 12s per action on marketing sites. "Wait for quiet" is the
   wrong model, not a wrong constant.
-- **Cross-origin iframes (OOPIF)** are not captured.
+- **Cross-SITE iframes (OOPIF)** are not captured. Narrowed 2026-08-01: frames in
+  the page's own renderer process — same-origin AND cross-origin-same-site — ARE
+  captured now (reachability is frame-tree membership, not an origin comparison).
+  A cross-site frame is absent from `Page.getFrameTree` entirely and needs
+  `Target.setAutoAttach` + per-frame sessions. It is COUNTED and its `src` named
+  in `meta.frames.unreachable`, so its absence is stated rather than silent.
+  Residual holes, stated: a `display:none` cross-site frame has no AX node and so
+  is not counted at all; a `visibility:hidden` frame is still composed into the
+  HTML; and a naked `width=0 height=0` frame measures 4×4 (Chrome's default 2px
+  border) and is composed, while the `frameborder=0` form real tracking pixels
+  use is correctly skipped.
 - **The crawler is parked** — see DECISIONS.
 
 ## Package layout

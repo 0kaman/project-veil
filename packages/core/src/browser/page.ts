@@ -11,6 +11,7 @@
  * it, google-shaped pages burn the full cap on every render.
  */
 import type { CDPClient } from "./cdp-client.js";
+import { composeFrameHtml, listFrames } from "./frames.js";
 import { debugLog } from "../debug.js";
 
 export interface RenderPageResult {
@@ -18,6 +19,11 @@ export interface RenderPageResult {
   finalUrl: string;
   /** Set when navigation itself failed (DNS, connection, blocked). */
   errorText?: string;
+  /** What the HTML covers when the page has child documents. Present only then.
+   * NOTE (named partial): @veil/read consumes the html STRING, so these counts
+   * do not currently reach the read receipt — that needs read-side plumbing this
+   * change deliberately does not touch. */
+  frames?: { composed: number; hidden: number; appended: number };
 }
 
 export interface SettleOptions {
@@ -146,7 +152,30 @@ export async function renderPage(
   await waitForLoad(client, settle.navTimeoutMs);
   await awaitNetworkIdle(client, settle);
 
-  const html = (await evalString(client, "document.documentElement.outerHTML")) ?? "";
+  const raw = (await evalString(client, "document.documentElement.outerHTML")) ?? "";
   const finalUrl = (await evalString(client, "location.href")) ?? url;
-  return { html, finalUrl };
+
+  // A page whose content is an iframe serializes to markup with none of its
+  // prose in it (measured: 216 chars, no answer). Splice the child documents in
+  // — the render rung exists to hand the extractor real HTML, and top-frame-only
+  // HTML is not that.
+  try {
+    const frames = await listFrames(client);
+    if (frames.length > 1) {
+      // DOM methods below take backendNodeIds; the domain has to be live.
+      await client.send("DOM.enable").catch(() => {});
+      await client.send("DOM.getDocument", { depth: -1 }).catch(() => {});
+      const c = await composeFrameHtml(client, frames, raw);
+      return {
+        html: c.html,
+        finalUrl,
+        frames: { composed: c.composed, hidden: c.hidden, appended: c.appended },
+      };
+    }
+  } catch (err) {
+    // Degradation-by-design: a compose failure returns the top document, which
+    // is exactly what this call returned before. VEIL_DEBUG=1 surfaces it.
+    debugLog("render: frame composition failed", err);
+  }
+  return { html: raw, finalUrl };
 }

@@ -89,15 +89,54 @@ export interface BehaviorNode {
    * Carried on the node because an agent decides what to do from the GRAPH, not
    * from the tool schema (DECISIONS 2026-07-26). */
   submitOnly?: boolean;
+  /** This node lives in a CHILD document, not the top one. Carried on the node
+   * because an agent decides what to do from the graph: "this control is in an
+   * iframe" changes what it should expect the page to do, and the act path needs
+   * it to compute a click point in the right coordinate space. */
+  frame?: { url: string; depth: number };
+}
+
+/**
+ * The child documents this page's content lives in.
+ *
+ * Present only when there is at least one. `total` and `readable` are
+ * deliberately separate fields because they measurably DIFFER: on the
+ * cross-site fixture Chrome reports 2 frame elements and 1 frame-tree child.
+ * Collapsing them into one number is how a receipt quietly claims completeness
+ * it does not have.
+ *
+ * The arithmetic is a contract: `total === readable.length + unreachable.length`.
+ * A Layer-1 test asserts it, because a receipt that does not add up is worse
+ * than no receipt.
+ */
+export interface FrameFacts {
+  /** The top document is a `<frameset>` — it has NO content of its own. */
+  frameset: boolean;
+  /** Every child document that exists, readable or not. The denominator. */
+  total: number;
+  /** Documents Chrome lets us into: same renderer process, which measured means
+   * same-origin AND cross-origin-same-site. Frame-tree membership, not origin. */
+  readable: Array<{ name: string; url: string; depth: number }>;
+  /** Documents we can see exist and cannot read — cross-SITE frames, which
+   * Chrome isolates into their own process and omits from `Page.getFrameTree`
+   * entirely. `src` where recoverable. There is NO recovery for these. */
+  unreachable: string[];
+  /** How many of `readable` have their content merged into THIS graph. 0 means
+   * every frame's content is missing from what follows. */
+  perceived: number;
 }
 
 export interface GraphMeta {
   url: string;
   title: string;
   route: string;
-  /** Total non-ignored AX nodes considered — the denominator for honesty. */
+  /** Non-ignored AX nodes considered — the denominator for honesty. When frames
+   * are perceived this is the SUM across the documents walked; `frames.perceived`
+   * says how many that is, so the number never silently changes meaning. */
   axNodes: number;
   builtInMs: number;
+  /** Child documents, when there are any. See FrameFacts. */
+  frames?: FrameFacts;
   /** An open dialog's accessible name, when one is holding the page. Measured:
    * typing into Google Flights' origin opens `dialog "Enter your origin"` and
    * aria-hides everything else, so `combobox-where-to` correctly leaves the

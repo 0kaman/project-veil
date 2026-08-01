@@ -99,7 +99,12 @@ export function renderQuery(session: string, res: QueryResult | { gone: GoneReas
   }
   const head = `via: engine · ${res.matched} match${res.matched === 1 ? "" : "es"}`;
   const parts = [res.note ? `${head}\n${res.note}` : head, ""];
-  if (res.returned.length === 0) parts.push("  (nothing matched — try a broader filter)");
+  // "try a broader filter" is the wrong advice when the reason nothing matched
+  // is that the content is in a child document — queryNodes says so in `note`,
+  // which is already printed above, so don't contradict it here.
+  if (res.returned.length === 0 && !res.note) {
+    parts.push("  (nothing matched — try a broader filter)");
+  }
   for (const n of res.returned) parts.push(nodeLine(n));
   return parts.join("\n");
 }
@@ -155,6 +160,20 @@ export function renderAct(node: string, action: string, r: ActResult): string {
       );
     } else if (d.dialog?.closed) {
       parts.push(`dialog closed: "${d.dialog.closed}" — the page is reachable again.`);
+    }
+    // Same reasoning as DIALOG, at the same surface. An agent that clicks a link
+    // into a frameset otherwise reads "−16 actions" with no explanation, and the
+    // measured next move is to start guessing frame names.
+    if (d.frames && d.frames.after > d.frames.before) {
+      parts.push(
+        `FRAMES: this page now has ${d.frames.after} child document(s)` +
+          (d.frames.unreadable > 0
+            ? `, ${d.frames.unreadable} of which are NOT in the graph — veil_query or veil_open ` +
+              `the graph again to see their URLs before assuming the page is empty.`
+            : `, and their content IS in the graph.`),
+      );
+    } else if (d.frames && d.frames.after < d.frames.before) {
+      parts.push(`frames: ${d.frames.before} → ${d.frames.after} child documents.`);
     }
     const bits: string[] = [];
     if (d.added.length) bits.push(`+${d.added.length} actions (${d.added.slice(0, 5).join(", ")})`);

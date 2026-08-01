@@ -124,15 +124,35 @@ export function registerVeilTools(server: McpServer, deps: VeilDeps): void {
           if (!live.html) {
             return text(`via: session · ${url} returned no HTML — the tab may have crashed.`);
           }
+          // This HTML may cover MORE than one document, and may have skipped
+          // some. The counts are in hand right here, so dropping them would let
+          // this receipt claim a completeness it does not have — which is the
+          // exact defect the frame work exists to remove, one layer up.
+          const fr = live.frames;
+          const frameNote = fr
+            ? `\nframes: ${fr.composed} child document(s) included in this text` +
+              (fr.hidden > 0
+                ? ` · ${fr.hidden} SKIPPED as hidden (display:none or zero-sized), so their ` +
+                  `text is not below`
+                : "") +
+              (fr.appended > 0
+                ? ` · ${fr.appended} could not be placed and were appended at the end, out of ` +
+                  `document order`
+                : "")
+            : "";
           const r = deps.reader.readHtml(live.html, live.url, Date.now() - t0);
           // A results page is long and the query is how the answer gets found,
           // so honour it immediately rather than making the agent round-trip
           // through the handle it was just given.
           if (query && r.handle) {
             const pull = deps.reader.more(r.handle, query);
-            if (pull) return text(`${renderRead(r).split("\n")[0]}\n${renderPull(pull, r.handle)}`);
+            if (pull) {
+              return text(
+                `${renderRead(r).split("\n")[0]}${frameNote}\n${renderPull(pull, r.handle)}`,
+              );
+            }
           }
-          return text(renderRead(r));
+          return text(`${renderRead(r)}${frameNote}`);
         }
         // A fresh read.
         return text(renderRead(await deps.reader.read(url)));

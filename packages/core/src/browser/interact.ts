@@ -131,6 +131,56 @@ const ACTIONABLE_FN = `async function() {
   }
 }`;
 
+/**
+ * The click point for a node inside a CHILD document.
+ *
+ * `ACTIONABLE_FN` computes its point from `getBoundingClientRect`, which is
+ * FRAME-LOCAL, while `Input.dispatchMouseEvent` takes TOP-VIEWPORT coordinates.
+ * Measured, before this existed: `dispatchAction` returned
+ * `{"ok":true,"at":{"x":79.73,"y":112.31}}` for a click that landed on the top
+ * document's BODY — the iframe's `document.title` never changed and the top
+ * frame's `elementFromPoint` at those coordinates was `BODY`. A confident `ok`
+ * for an action that did nothing is the exact bug class this project keeps
+ * finding, and it is why merging in-frame nodes into the graph and fixing the
+ * coordinate space are ONE change, not two.
+ *
+ * `DOM.getContentQuads` returns MAIN-FRAME coordinates (measured 18/135.78 =
+ * 8+2+8 / 113.875+2+19.906 for a frame at depth 1) and lands at depth 1 AND
+ * depth 2. Empty quads mean the element has no rendered box — a refusal with a
+ * reason, never a false ok.
+ *
+ * Root-frame nodes do NOT take this path: it would change the hot path for every
+ * existing Layer-2 test, and quads have their own edges (multiple quads on an
+ * inline element, computed at a different instant than the stability check).
+ * Worth revisiting as a simplification, with a measurement.
+ */
+async function frameClickPoint(
+  client: CDPClient,
+  backendNodeId: number,
+): Promise<{ x: number; y: number } | null> {
+  let quads: number[][];
+  try {
+    const r = (await client.send("DOM.getContentQuads", { backendNodeId })) as {
+      quads?: number[][];
+    };
+    quads = r.quads ?? [];
+  } catch (err) {
+    debugLog("interact: getContentQuads failed", err);
+    return null;
+  }
+  for (const q of quads) {
+    if (q.length < 8) continue;
+    const xs = [q[0]!, q[2]!, q[4]!, q[6]!];
+    const ys = [q[1]!, q[3]!, q[5]!, q[7]!];
+    // A zero-area quad is what a width=0/height=0 frame produces (measured).
+    // Treat it as no box rather than clicking a point that hits whatever is
+    // behind it.
+    if (Math.max(...xs) - Math.min(...xs) <= 0 || Math.max(...ys) - Math.min(...ys) <= 0) continue;
+    return { x: (xs[0] + xs[1] + xs[2] + xs[3]) / 4, y: (ys[0] + ys[1] + ys[2] + ys[3]) / 4 };
+  }
+  return null;
+}
+
 async function resolveObject(client: CDPClient, backendNodeId: number): Promise<string | null> {
   try {
     const r = (await client.send("DOM.resolveNode", { backendNodeId })) as {
@@ -200,10 +250,17 @@ async function typeText(client: CDPClient, textToType: string): Promise<void> {
   }
 }
 
+export interface DispatchOptions {
+  /** The node lives in a child document, so its rect is in the WRONG coordinate
+   * space for Input.dispatchMouseEvent. Set from `BehaviorNode.frame`. */
+  inFrame?: boolean;
+}
+
 export async function dispatchAction(
   client: CDPClient,
   backendNodeId: number,
   action: Action,
+  opts: DispatchOptions = {},
 ): Promise<DispatchResult> {
   const objectId = await resolveObject(client, backendNodeId);
   if (!objectId) {
@@ -238,7 +295,26 @@ export async function dispatchAction(
       ...(verdict.backdrop ? { backdrop: true } : {}),
     };
   }
-  const at = { x: verdict.x!, y: verdict.y! };
+  let at = { x: verdict.x!, y: verdict.y! };
+
+  // ACTIONABLE_FN has already run — including its scrollIntoView, which measured
+  // scrolls the PARENT too (y 3749 → 949 in a 993px viewport), so the quads below
+  // are taken with the element on screen. Only the coordinate SPACE is wrong, and
+  // only for a node in a child document.
+  if (opts.inFrame) {
+    const point = await frameClickPoint(client, backendNodeId);
+    if (!point) {
+      return {
+        ok: false,
+        failure: "not-visible",
+        detail:
+          "this node is inside a child document and has no rendered box there " +
+          "(DOM.getContentQuads returned nothing), so there is no point to click. " +
+          "The frame may be display:none or zero-sized.",
+      };
+    }
+    at = point;
+  }
 
   try {
     switch (action.kind) {

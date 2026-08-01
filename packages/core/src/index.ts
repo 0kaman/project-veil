@@ -25,9 +25,21 @@ export type {
   BehaviorNode,
   EventBinding,
   EventCategory,
+  FrameFacts,
   GraphMeta,
   NodeState,
 } from "./graph/model.js";
+export {
+  listFrames,
+  isFrameset,
+  unreachableOwners,
+  frameElementSrcs,
+  composeFrameHtml,
+  type FrameInfo,
+  type ComposedHtml,
+} from "./browser/frames.js";
+export { mergeFrameTrees, type FrameAXTree, type ShapedNode } from "./pipeline/stage-1-axtree.js";
+export type { SessionHtml } from "./session.js";
 export { DOER_ROLES, NAV_ROLES, routeOf } from "./graph/model.js";
 export { buildGraph, type BuildResult } from "./graph/build.js";
 export { projectLean, type ProjectOptions } from "./graph/project.js";

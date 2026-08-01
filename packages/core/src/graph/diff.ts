@@ -22,6 +22,11 @@ export interface GraphDiff {
    * after veil_do, so it is where the modal has to be reported: measured, six
    * of six fare runs saw nodes vanish here and read it as a broken page. */
   dialog?: { opened?: string; closed?: string };
+  /** The page crossed into (or out of) having child documents whose content is
+   * not in the graph. Set only when that changed. Same reasoning as `dialog`:
+   * an agent that navigates a link INTO a frameset sees "−16 actions" and needs
+   * to be told why, at the surface it actually reads. */
+  frames?: { before: number; after: number; unreadable: number };
 }
 
 function stateStr(s: Record<string, unknown>): string {
@@ -40,6 +45,18 @@ export function diffGraphs(before: BehaviorGraph, after: BehaviorGraph): GraphDi
           ...(before.meta.dialog !== undefined && { closed: before.meta.dialog }),
         }
       : undefined;
+  const framesBefore = before.meta.frames?.total ?? 0;
+  const framesAfter = after.meta.frames?.total ?? 0;
+  const fa = after.meta.frames;
+  const frameChange =
+    framesBefore !== framesAfter
+      ? {
+          before: framesBefore,
+          after: framesAfter,
+          unreadable: fa ? fa.readable.length - fa.perceived + fa.unreachable.length : 0,
+        }
+      : undefined;
+
   const added = after.doers.filter((id) => !beforeDoers.has(id));
   const removed = before.doers.filter((id) => !afterDoers.has(id));
 
@@ -64,10 +81,15 @@ export function diffGraphs(before: BehaviorGraph, after: BehaviorGraph): GraphDi
     linksBefore: before.links.length,
     linksAfter: after.links.length,
     ...(dialogChange && { dialog: dialogChange }),
+    ...(frameChange && { frames: frameChange }),
   };
 }
 
-/** True when the action produced no observable change at all. */
+/** True when the action produced no observable change at all.
+ *
+ * Deliberately blind to `frames`: a frame count that moved without a single
+ * doer, link, dialog or URL changing is not an observable effect of the action,
+ * and counting it would stop every act on a framed page reporting `noOp`. */
 export function isNoOp(d: GraphDiff): boolean {
   return (
     !d.navigated &&

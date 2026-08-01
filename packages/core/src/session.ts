@@ -22,6 +22,7 @@ import { browserTreeRssMb } from "./browser/memory.js";
 import { awaitSettle, settleConfig, type SettleResult } from "./browser/settle.js";
 import { dispatchAction, type Action, type ActionFailure } from "./browser/interact.js";
 import { NetworkRecorder, pickPrimary, type CapturedRequest } from "./browser/capture.js";
+import { composeFrameHtml, listFrames } from "./browser/frames.js";
 import { replayRequest, type ReplayEdits, type ReplayOutcome } from "./browser/replay.js";
 import { gateReplay, loadConfig, type VeilConfig } from "./config.js";
 import { buildGraph } from "./graph/build.js";
@@ -90,6 +91,14 @@ export interface ReplayResult extends Partial<ReplayOutcome> {
 
 /** Why a session is no longer available — reported, never silent. */
 export type GoneReason = "evicted-memory" | "evicted-idle" | "closed" | "unknown";
+
+export interface SessionHtml {
+  html: string;
+  url: string;
+  /** What the HTML actually covers, when the page has child documents. Present
+   * only then, so the common case carries no extra shape. */
+  frames?: { composed: number; hidden: number; appended: number };
+}
 
 export interface OpenResult {
   ok: boolean;
@@ -293,7 +302,9 @@ export class SessionPool {
     s.recorder.markBaseline();
     const firedAfter = Date.now();
 
-    let dispatched = await dispatchAction(s.client, node.backendNodeId, action);
+    let dispatched = await dispatchAction(s.client, node.backendNodeId, action, {
+      inFrame: node.frame !== undefined,
+    });
 
     // A STALE HANDLE is not a missing node. The graph is a snapshot and
     // `backendNodeId` only lives as long as that DOM node does, so a page that
@@ -312,7 +323,14 @@ export class SessionPool {
         const fresh = s.graph.nodes.get(nodeId);
         if (fresh?.backendNodeId !== undefined && fresh.backendNodeId !== node.backendNodeId) {
           debugLog(`act: re-resolved ${nodeId} after a re-render`);
-          dispatched = await dispatchAction(s.client, fresh.backendNodeId, action);
+          // `fresh.frame`, NOT `node.frame`. Reading the flag off the stale node
+          // is the silent-reversion path: the re-render may have moved the node
+          // into or out of a frame, and getting it wrong here reintroduces the
+          // false-ok intermittently — only on self-re-rendering pages, which is
+          // the hardest place to notice it.
+          dispatched = await dispatchAction(s.client, fresh.backendNodeId, action, {
+            inFrame: fresh.frame !== undefined,
+          });
           if (dispatched.ok) reResolved = true;
         }
       } catch (err) {
@@ -495,7 +513,7 @@ export class SessionPool {
    * session id, and got FETCH-FAILED; re-fetching the URL would have discarded
    * the form state that produced the results. So the session has to be readable.
    */
-  async html(sessionId: string): Promise<{ html: string; url: string } | { gone: GoneReason }> {
+  async html(sessionId: string): Promise<SessionHtml | { gone: GoneReason }> {
     const s = this.sessions.get(sessionId);
     if (!s) return { gone: this.gone.get(sessionId) ?? "unknown" };
     s.lastUsed = Date.now();
@@ -504,7 +522,21 @@ export class SessionPool {
         expression: "document.documentElement.outerHTML",
         returnByValue: true,
       })) as { result?: { value?: string } };
-      return { html: r.result?.value ?? "", url: s.url };
+      const raw = r.result?.value ?? "";
+
+      // `outerHTML` excludes child documents by spec. Measured before this: the
+      // arena's /iframe page came back as 216 chars with the answer nowhere in
+      // it, and the receipt said `status: ok` plus "this is the live tab, there
+      // is nothing further to escalate to" — while 100% of the page's prose sat
+      // one frame down. Composing here is what makes that receipt true.
+      const frames = await listFrames(s.client);
+      if (frames.length <= 1) return { html: raw, url: s.url };
+      const c = await composeFrameHtml(s.client, frames, raw);
+      return {
+        html: c.html,
+        url: s.url,
+        frames: { composed: c.composed, hidden: c.hidden, appended: c.appended },
+      };
     } catch (err) {
       debugLog("session.html failed", err);
       return { html: "", url: s.url };

@@ -112,10 +112,18 @@ re-running anything expensive.
 `uncaughtException`, but a hard kill can orphan it. Sessions hold a real browser; check
 for stray `chrome` processes if memory looks wrong.
 
-**A graph looks empty or wrong on a real site.** Most often cross-origin iframes (OOPIF),
-which are not captured at all. Second most often a modal: the page is `inert` behind a
-dialog and the graph correctly shows only what's reachable — the receipt says
-`DIALOG OPEN` when it detects one.
+**A graph looks empty or wrong on a real site.** Check the receipt first — since
+2026-08-01 it tells you which of these it is rather than leaving you to guess:
+
+- a `FRAMES (n)` line means the page has child documents. If it says they are
+  *perceived*, their controls are in the list above, tagged `@frame <path>`. If it
+  names URLs instead, those documents are NOT in the graph — `veil_open` one and
+  `veil_read` the session id it returns. If it says CROSS-SITE, that frame is an
+  OOPIF and there is genuinely no recovery.
+- `DIALOG OPEN` means the page is `inert` behind a modal and the graph correctly
+  shows only what is reachable.
+- silence on both means the page really is what it looks like. `VEIL_DEBUG=1`
+  surfaces a frame walk that failed and degraded quietly.
 
 **The playground spawns `dist/`.** After any source change, `pnpm build` before running
 it, or you are testing stale code.
