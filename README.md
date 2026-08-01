@@ -163,8 +163,8 @@ Layer-2 test against a local fixture, because a fake cannot catch those.
 **Alpha, rebooted 2026-07-15.** v1 was deleted and rebuilt around the ladder; it survives
 in git at `9e9f3e0`.
 
-The search, read, act and replay tiers all work end to end against real sites, behind 144
-hermetic and 47 integration tests. A representative hard task — *find the cheapest
+The search, read, act and replay tiers all work end to end against real sites, behind 235
+hermetic and 78 integration tests. A representative hard task — *find the cheapest
 nonstop BLR→DEL fare on a specific date* — has been completed end to end, driving a real
 booking form and reading the result out of the live tab. It is not yet reliable: most
 attempts still end in an honest "I could not get this and here is where I stopped."
@@ -177,10 +177,11 @@ browser outright; and semantic heuristics are English-only — are tracked in
 [docs/DECISIONS.md](docs/DECISIONS.md).
 
 Benchmarked head-to-head against [PinchTab](https://github.com/pinchtab/pinchtab), most
-recently on 2026-08-01 with neither contender gated: **37/40 against 22/40 at a 6.8×
-median token advantage**, over 80 runs against deterministic fixtures and the live web.
-The more useful output has been the defects it found — in both tools, and in the
-benchmark itself. Method, full table and every caveat: [docs/ARENA.md](docs/ARENA.md).
+recently on 2026-08-02 with neither contender gated and both cold-started per run:
+**35/40 against 19/40 at a 6.2× median token advantage**, over 80 runs against
+deterministic fixtures and the live web. Veil **loses** the frameset task outright, 0/5
+against 2/5 — a `<li onclick>` menu it cannot perceive at all. The more useful output has
+been the defects it found — in both tools, and in the benchmark itself. Method, full table and every caveat: [docs/ARENA.md](docs/ARENA.md).
 
 ## License
 

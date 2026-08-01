@@ -5,13 +5,102 @@ thing to a direct competitor: browser control for AI agents, accessibility-first
 token-efficient, MCP-native. Same premise, opposite architecture — PinchTab always boots
 Chrome, Veil's whole bet is not booting one.
 
-Two rounds are recorded here, newest first. **Round 3 (2026-08-01) is the first round in
-which neither contender was gated**, and it supersedes round 2 on every cell. Round 2 is
-kept below rather than edited, because its caveats are the reason round 3 exists.
+Rounds are recorded here, newest first, and older rounds are kept rather than edited —
+their caveats are the reason the later ones exist.
 
 ---
 
-# Round 3 — 2026-08-01, first ungated round
+# Round 4 — 2026-08-02, revised tasks, cold start per run
+
+**80 cells, zero gating refusals, zero unreachable-page failures.** Three tasks were
+rewritten because round 3 proved they measured the wrong thing; the new predictions were
+committed before this ran (`820eff2`).
+
+```
+              pass     median tokens   median time   median calls    total tokens
+veil         35/40         8,859          5.6s            3             852,808
+pinchtab     19/40        55,049         20.4s            8           4,162,390
+                       6.2× median                                   4.9× total
+```
+
+| task | veil | pinchtab | predicted | called? |
+|---|---|---|---|---|
+| `fact` | 5/5 · 4,724 | 5/5 · 36,472 | win | even on pass, 7.7× on cost |
+| `read` | **5/5** · 63,955 | 1/5 · 168,234 | win | **yes** — but see caveats |
+| `form` | **5/5** · 8,859 | **0/5** · 55,031 | even | finding 2 |
+| `spa` | **5/5** · 5,819 | 2/5 · 35,435 | even | digit-slicing, as round 3 |
+| `submit`\* | **5/5** · 8,048 | **0/5** · 193,044 | **win** | **yes** |
+| `iframe` | 5/5 · 6,091 | 5/5 · 26,409 | lose | **falsified again**, drawn |
+| `frameset`\* | **0/5** · 55,851 | **2/5** · 220,266 | lose | **yes — and Veil LOSES the cell** |
+| `mixed`\* | **5/5** · 12,777 | 4/5 · 116,269 | win | narrowly |
+
+\* revised for this round.
+
+## What round 4 found
+
+1. **Veil loses `frameset` outright, 0/5 against 2/5, and round 3 was hiding it.** With
+   the target URL opaque, PinchTab wins by genuinely *driving the menu* — `pinchtab_frame`
+   to enter the menu document, then `pinchtab_click selector:"text=Billing"`. No
+   navigation to the opaque path. Veil went 0/5, and one run says out loud what it tried:
+   *"I'll try opening the Billing page directly by guessing its URL."* It could not.
+
+   In round 3 this cell read 2/5 vs 2/5 — a draw — but **both of Veil's wins were URL
+   guesses**, so fixing my own broken task turned an apparent draw into a clean loss.
+   That is the single most useful thing this round produced, and it is evidence against
+   Veil's architecture, not for it: Veil filters the AX tree to `DOER_ROLES`, so a
+   `<li onclick>` is not merely unnamed, it is **absent**. PinchTab can select by text
+   and click whatever is there. The structured graph is cheaper *and* blinder, and this
+   is the case where blinder wins.
+
+2. **PinchTab's `fill` no-op, confirmed by a prediction rather than fitted to a result.**
+   `submit` was re-registered `even → win` before the run on the round-3 evidence.
+   Result: Veil 5/5 at 8,048, PinchTab **0/5, every answer empty, ~193,000 tokens each** —
+   three times what the same task cost it in round 3, when a fixture that ignored the
+   query handed it a pass at 63,187. `ORD-00l` appeared five more times in `form`, making
+   **nine byte-identical occurrences across two rounds**, two container rebuilds and a
+   restarted daemon.
+
+3. **Fixing `mixed` helped PinchTab, which is the point.** 1/5 → 4/5 once the question
+   stopped being about PinchTab's own config. The contamination was real and it was
+   against them.
+
+4. **Two session-length defects, one per contender, both invisible in the results table.**
+   Veil leaked a ~900 MB Chrome tree per run (no reap on stdin EOF) until the container
+   hit 7.1 GiB of 7.7 GiB and Chrome stopped starting — fixed, with Layer-2 tests.
+   PinchTab's daemon stopped answering its own CLI after ~120 cumulative runs while its
+   container looked healthy at 278 MB. **Both surfaced as "cannot reach the page", which
+   is indistinguishable from a capability failure.** Two attempts at this round were
+   discarded before the cause was found. Both containers now restart before every run.
+
+## Caveats — round 4, all of them the author's
+
+- **This measures clean-process capability, not endurance.** The per-run reset is what
+  makes runs independent, which is what the median and spread already assume. Endurance
+  is a real property of both tools and neither is measured here.
+- **`read` may be a step-budget artifact, not capability.** All four PinchTab failures
+  returned EMPTY after hitting `maxSteps: 14` at ~150–170k tokens. Veil answers in 3–4
+  calls; PinchTab needs more per page, so a budget that is generous for one may bind on
+  the other. The cell is reported as measured, but it should not be read as "PinchTab
+  cannot read Wikipedia".
+- **`frameset` is now a fair test and Veil fails it.** Reported here rather than buried:
+  the previous version of this task flattered Veil and I only found out by checking the
+  mechanism of its wins.
+- **5 runs per cell.** `form` (0/5, byte-identical), `submit` (0/5, all empty) and
+  `iframe` (5/5 both) are conclusive at this depth; single-run differences are not.
+- **The fixtures, the agent loop and the history pruner are all mine.** Measured for this
+  round: the pruner collapses 100% of Veil's large-result bytes and 63% of PinchTab's,
+  because Veil's first line is a receipt and PinchTab's is JSON. That favours Veil on the
+  token metric — though it cannot explain the gap, since Veil emits **3× more** tool-output
+  bytes (650k vs 207k) and still costs 4.9× less in total. The gap decomposes as
+  `schema × turns`: 1,313 × 3 vs 6,841 × 8.
+
+---
+
+# Round 3 — 2026-08-01, first ungated round (superseded by round 4 on three tasks)
+
+> **`submit`, `frameset` and `mixed` below were rewritten for round 4** because this
+> round proved they measured the wrong thing. Their numbers here are kept for the record
+> and should not be cited. Every other cell stands.
 
 **80 cells, zero gating refusals** (verified per-trace, error-shaped results only — not
 prose matches; my first pass at that check flagged 10 traces and every one was the

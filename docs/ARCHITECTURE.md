@@ -41,12 +41,14 @@
 > tokens across an entire run, so the doers-first graph is not the expense — prose
 > is.
 >
-> **Benchmarked head-to-head against PinchTab.** Round 3 (2026-08-01) is the first
-> round with **neither contender gated**: 80 cells, zero gating refusals, **Veil
-> 37/40 against 22/40 at a 6.8× median token advantage** (8,053 vs 55,025), 6.4s vs
-> 19.9s, 3 tool calls vs 6. Cite the median — the 4.0× total is dragged toward parity
-> by Veil's two expensive cells. **The pre-registered `iframe` loss is falsified,
-> 0/5 → 5/5**: frames in the page's own renderer process (same-origin *and*
+> **Benchmarked head-to-head against PinchTab.** Round 4 (2026-08-02), neither
+> contender gated, both cold-started per run: 80 cells, zero gating refusals, **Veil
+> 35/40 against 19/40 at a 6.2× median token advantage** (8,859 vs 55,049), 5.6s vs
+> 20.4s, 3 tool calls vs 8. Cite the median — the total is dragged toward parity by
+> Veil's expensive `read` and `frameset` cells. **Veil LOSES `frameset` outright, 0/5
+> against 2/5**: a `<li onclick>` menu is absent from the graph because stage 1 filters
+> on ARIA role before anything looks for handlers, while PinchTab clicks it by text
+> selector. **The pre-registered `iframe` loss is falsified, 0/5 → 5/5**: frames in the page's own renderer process (same-origin *and*
 > cross-origin-same-site) are now walked, spliced into the graph and the serialized
 > HTML, and clickable. Cross-**site** frames (OOPIF) still are not, and are counted
 > and named rather than silently absent. Three of the eight tasks turned out to be
