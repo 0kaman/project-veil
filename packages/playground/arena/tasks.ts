@@ -85,11 +85,19 @@ export const TASKS: Task[] = [
   },
   {
     id: "submit",
-    probes: "act — a search box with NO submit button (Enter is the only way)",
+    probes: "act — a search box with NO submit button (Enter is the only way), and the typed text must ARRIVE",
     prompt:
       `Go to ${FIXTURES}/search , search the staff directory for "engineering", and tell me Grace Hopper's desk and extension.`,
     check: has(/B-04/i, /4409/),
-    veilExpected: "even",
+    // RE-REGISTERED 2026-08-01, prediction recorded BEFORE the run. The fixture
+    // now filters on `q`, so an empty query returns no rows — the cell used to
+    // be a NULL CELL that returned every row regardless. Predicting "win"
+    // rather than "even" on measured evidence, not hope: round 3 showed
+    // PinchTab's `fill` is a silent no-op (`{"filled":true,"len":0}`, and the
+    // browser navigated to `/found?q=`), while Veil's `form` 5/5 requires all
+    // three inputs to have landed. If PinchTab passes this, that inference was
+    // wrong and the round-3 finding needs revisiting.
+    veilExpected: "win",
     maxSteps: 20,
   },
 
@@ -104,10 +112,17 @@ export const TASKS: Task[] = [
   },
   {
     id: "frameset",
-    probes: "frameset + JS-built menu with no hrefs — the router admin-UI shape",
+    probes: "frameset + JS-built menu with no hrefs, at an UNGUESSABLE url — the router admin-UI shape",
     prompt:
       `Open ${FIXTURES}/frameset . Using the menu on the left, go to Billing and tell me the account balance.`,
     check: has(/\b8432\b/),
+    // RE-REGISTERED 2026-08-01. The billing document moved from `/frame-billing`
+    // to an opaque path, because round 3 showed every Veil win here GUESSED that
+    // URL from the label and no run ever clicked the menu. Prediction sharpened
+    // from "lose" to "expect 0/5": with guessing removed, the only route is
+    // dispatching an `<li onclick>`, and `listitem` is not a doer role. A pass
+    // now would mean either the guess path survives or something perceives the
+    // handler — both worth knowing.
     veilExpected: "lose",
     maxSteps: 22,
   },
@@ -116,10 +131,21 @@ export const TASKS: Task[] = [
   {
     id: "mixed",
     probes: "full ladder — cheapest rung that answers, on the live web",
+    // REVISED 2026-08-01. This used to ask PinchTab's own default port and bind
+    // address, which was contaminated ONE-SIDEDLY: PinchTab can answer by
+    // introspecting its running config rather than by retrieving anything, and
+    // this arena had set that config's bind to 0.0.0.0. One run returned
+    // "9867 0.0.0.0" — the port right, the bind scored wrong against a value
+    // the harness itself changed. Veil answered the same question from docs and
+    // was unaffected. A task about one contender cannot measure both.
+    //
+    // PostgreSQL is neutral to both. `listen_addresses` is the load-bearing
+    // half: 5432 is common knowledge a model may answer unaided, whereas the
+    // default of 'localhost' generally needs the docs.
     prompt:
-      "What port does PinchTab's local server listen on by default, and what is its default bind address? " +
-      "Answer with the number and the address.",
-    check: has(/\b9867\b/, /127\.0\.0\.1|localhost|loopback/i),
+      "What port does a PostgreSQL server listen on by default, and what is the default value " +
+      "of its listen_addresses setting? Answer with the number and the value.",
+    check: has(/\b5432\b/, /localhost/i),
     veilExpected: "win",
     maxSteps: 14,
   },
