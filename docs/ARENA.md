@@ -1,13 +1,117 @@
-# Arena — Veil vs PinchTab, 2026-07-31
+# Arena — Veil vs PinchTab
 
 A head-to-head against [PinchTab](https://github.com/pinchtab/pinchtab), the closest
 thing to a direct competitor: browser control for AI agents, accessibility-first,
 token-efficient, MCP-native. Same premise, opposite architecture — PinchTab always boots
 Chrome, Veil's whole bet is not booting one.
 
+Two rounds are recorded here, newest first. **Round 3 (2026-08-01) is the first round in
+which neither contender was gated**, and it supersedes round 2 on every cell. Round 2 is
+kept below rather than edited, because its caveats are the reason round 3 exists.
+
+---
+
+# Round 3 — 2026-08-01, first ungated round
+
+**80 cells, zero gating refusals** (verified per-trace, error-shaped results only — not
+prose matches; my first pass at that check flagged 10 traces and every one was the
+`mixed` task *reading PinchTab's docs about IDPI*).
+
+```
+              pass     median tokens   median time   median calls    total tokens
+veil         37/40         8,053          6.4s            3             771,315
+pinchtab     22/40        55,025         19.9s            6           3,068,395
+                       6.8× median                                   4.0× total
+```
+
+**Lead with the median, not the total.** The 4.0× total is dragged toward parity by
+Veil's two expensive cells (`read`, `frameset`). The per-task medians cluster tightly —
+7.7× / 2.3× / 6.2× / 6.1× / 7.8× / 4.3× / 4.0× / 7.4× — and that consistency is the
+defensible claim. Before either agent acts, the tool schemas alone cost **1,313 vs 6,841
+tokens per request (5.2×)**.
+
+| task | veil | pinchtab | predicted | notes |
+|---|---|---|---|---|
+| `fact` | **5/5** · 4,724 | 5/5 · 36,472 | win | now fair — was 6/6 blocked in round 2 |
+| `read` | **5/5** · 64,003 | 2/5 · 146,863 | win | PinchTab's 3 losses all hit max steps with an EMPTY answer |
+| `form` | **5/5** · 8,862 | **0/5** · 55,025 | even | see finding 1 — deterministic, same wrong code 5/5 |
+| `spa` | **5/5** · 5,819 | 2/5 · 35,429 | even | see finding 2 |
+| `submit` | 5/5 · 8,053 | 5/5 · 63,187 | even | **NULL CELL — my fixture ignores the query** |
+| `iframe` | **5/5** · 6,091 | 5/5 · 26,409 | **lose** | **prediction falsified — 0/5 → 5/5** |
+| `frameset` | 2/5 · 55,441 | 2/5 · 219,983 | lose | **both wins were URL guesses; see finding 4** |
+| `mixed` | **5/5** · 4,862 | 1/5 · 35,738 | win | contaminated for PinchTab; see caveats |
+
+`veilExpected` is **not** edited. `iframe` was pre-registered as a predicted LOSS and Veil
+won it — that is pre-registration doing its job, and rewriting it afterwards would destroy
+the only thing that makes a prediction record worth keeping.
+
+## What round 3 found
+
+1. **PinchTab's `fill` reports success on a no-op, and its own receipt says so.**
+   `{"result":{"filled":true,"len":0}}` — `filled: true` beside a field length of zero.
+   Confirmed twice by *server-side* ground truth, not by reading the receipt:
+   - `form`: the fixture builds its code as `ORD-{name.length}{qty}{size[0]}`. Expected
+     `ORD-34l`; PinchTab returned **`ORD-00l`** on all five runs — name empty, quantity
+     empty, size correct. The confirmation page read `Customer: · Quantity: · Size: large`.
+   - `submit`: after `fill`, the browser navigated to **`/found?q=`** — an empty query.
+
+   This is the mirror image of the `select` defect the round-2 arena found in **Veil**,
+   which reported `ok` while printing `value=""`. Both tools shipped a success receipt
+   carrying the evidence of its own failure. That symmetry is the point: it is why the
+   receipt principle exists, and Veil's was caught only because someone read the receipt
+   it printed.
+
+2. **PinchTab's text extraction runs table cells together with no separator.** `/spa`
+   returns `…Widget17499Sprocket31250Flange075`, so "stock 3, price 1250" is
+   unrecoverable — the agent answered "312 and 50", "17499 and 3", "31 and 250" on
+   different runs. Same defect class as the one Veil fixed in `denseExtract`
+   (DECISIONS: `textContent` runs words together), on the other side of the fence.
+
+3. **Veil's iframe fix is real, measured, 5/5** — at 4.3× less than PinchTab for the same
+   answer. Round 2's 0/5 was the last measured number until now; this replaces it.
+
+4. **`frameset` does not measure what it claims, and Veil's 2/5 is not a capability.**
+   Across all five Veil runs the correlation is perfect: every win guessed the URL
+   `/frame-billing`, every loss did not, and **no run ever clicked the menu** —
+   `veil_query name:"Billing"` returned 0 matches every single time. `/frame-billing`
+   appears nowhere in the prose Veil receives (it lives only in `<script>` source). The
+   task is passable by inferring a URL from a label, so it scores guessing, not frame
+   interaction. The underlying `listitem` defect is unfixed and confirmed by every run.
+
+## Caveats — round 3, all of them the author's
+
+- **`submit` is a null cell.** The fixture's `RESULTS(q)` ignores `q` and always returns
+  all three staff rows, so the task never tested whether the typed text landed — only
+  whether a contender could reach the results page and read a table. PinchTab's 5/5 here
+  is *not* evidence its `fill` works; finding 1 shows it does not. Veil's `form` 5/5 is
+  the real evidence that Veil's inputs land, since `ORD-34l` cannot be produced without
+  all three fields arriving.
+- **`mixed` is contaminated for PinchTab, one-sided.** The task asks PinchTab's own
+  default port and bind address. PinchTab can answer by introspecting its running config
+  — which *this arena* set to `0.0.0.0` — so run 2 returned "9867 0.0.0.0": the port
+  right, and the bind scored wrong against a value the harness itself changed. Veil
+  answers the same question from documentation and is unaffected. Treat PinchTab's 1/5
+  as a floor, not a measurement.
+- **`frameset` is guessable** (finding 4). Both contenders 2/5, so it is a null cell in
+  the comparison either way.
+- **5 runs per cell.** Better than round 2's 2–5, still thin. The `form` result (0/5,
+  byte-identical wrong answer every run) and `iframe` (5/5 both sides) are the cells where
+  5 runs are genuinely conclusive; single-run gaps elsewhere are not.
+- **Three of the eight tasks turned out to be flawed** — `submit` null, `frameset`
+  guessable, `mixed` self-referential. That is a worse hit rate than round 2's task set
+  looked, because round 2's gating masked which cells were actually discriminating.
+
+---
+
+# Round 2 — 2026-07-31 (superseded; both contenders partly gated)
+
 **Headline: Veil answered slightly more tasks for a quarter of the tokens, and loses
 squarely on iframe content.** The more useful output was three defects the benchmark
 found in Veil that a week of testing had not.
+
+> **Superseded by round 3.** Every number below was measured with PinchTab's allowlist
+> partly enforcing and is kept for the record, not for citation. The `iframe` 0/5 in
+> particular is now 5/5 — see round 3, finding 3.
 
 ## Method
 

@@ -41,16 +41,17 @@
 > tokens across an entire run, so the doers-first graph is not the expense — prose
 > is.
 >
-> **Benchmarked head-to-head against PinchTab** (2026-07-31): slightly more tasks
-> answered for a **quarter of the tokens** (789k vs 3.14M over 61 runs), and a clean
-> loss on same-origin **iframe** content, 0/5 vs 5/5 — Veil read only the top frame's
-> AX tree. Method, full table and caveats in `docs/ARENA.md`. **The perception half
-> of that loss is fixed as of 2026-08-01** (DECISIONS): every frame in the page's
-> own renderer process — same-origin *and* cross-origin-same-site — is now walked,
-> spliced into the graph and into the serialized HTML, and its controls are
-> clickable. Cross-**site** frames (OOPIF) are still not reachable; they are now
-> counted and named instead of being silently absent. **The arena has not been
-> re-run, so the 0/5 stands as the last measured number.**
+> **Benchmarked head-to-head against PinchTab.** Round 3 (2026-08-01) is the first
+> round with **neither contender gated**: 80 cells, zero gating refusals, **Veil
+> 37/40 against 22/40 at a 6.8× median token advantage** (8,053 vs 55,025), 6.4s vs
+> 19.9s, 3 tool calls vs 6. Cite the median — the 4.0× total is dragged toward parity
+> by Veil's two expensive cells. **The pre-registered `iframe` loss is falsified,
+> 0/5 → 5/5**: frames in the page's own renderer process (same-origin *and*
+> cross-origin-same-site) are now walked, spliced into the graph and the serialized
+> HTML, and clickable. Cross-**site** frames (OOPIF) still are not, and are counted
+> and named rather than silently absent. Three of the eight tasks turned out to be
+> flawed — all the author's. Method, full table, findings and caveats in
+> `docs/ARENA.md`.
 >
 > The rule: this file describes what the code **actually does**, not what we
 > hope. Drift between doc and code is a bug. Every number is measured — from v1,

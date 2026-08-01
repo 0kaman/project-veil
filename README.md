@@ -169,10 +169,18 @@ nonstop BLR→DEL fare on a specific date* — has been completed end to end, dr
 booking form and reading the result out of the live tab. It is not yet reliable: most
 attempts still end in an honest "I could not get this and here is where I stopped."
 
-Known limitations — cross-origin iframes are not captured at all, anti-bot stealth is
-shallow enough that travel aggregators defeat the browser outright, and semantic
-heuristics are English-only — are tracked in
+Known limitations — cross-**site** iframes (OOPIF) are not captured, though they are now
+counted and named rather than silently absent; a control that is only a `<li onclick>`
+is not seen as actionable, because stage 1 filters on ARIA role before anything looks
+for handlers; anti-bot stealth is shallow enough that travel aggregators defeat the
+browser outright; and semantic heuristics are English-only — are tracked in
 [docs/DECISIONS.md](docs/DECISIONS.md).
+
+Benchmarked head-to-head against [PinchTab](https://github.com/pinchtab/pinchtab), most
+recently on 2026-08-01 with neither contender gated: **37/40 against 22/40 at a 6.8×
+median token advantage**, over 80 runs against deterministic fixtures and the live web.
+The more useful output has been the defects it found — in both tools, and in the
+benchmark itself. Method, full table and every caveat: [docs/ARENA.md](docs/ARENA.md).
 
 ## License
 
