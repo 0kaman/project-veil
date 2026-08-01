@@ -135,7 +135,11 @@ function main(): void {
   if (reads.pulls > 0) console.log(DIM(`  (${reads.pulls} handle pulls — search-within-page, not counted)`));
   console.log(
     DIM(
-      `\n  ${pct(reads.doorman + reads.jsShell, reads.total)}% of chosen URLs needed a browser — but that's agent\n` +
+      // Must match Episode.escalationRate (episode.ts) exactly — `frames` needs
+      // the engine for the same reason the other two do, and two numbers on the
+      // same page disagreeing about what "needed a browser" means is how a
+      // metric stops being trusted.
+      `\n  ${pct(reads.doorman + reads.jsShell + reads.frames, reads.total)}% of chosen URLs needed a browser — but that's agent\n` +
         "  URL choice, NOT task escalation. A skeptical agent routes around them.\n",
     ),
   );
