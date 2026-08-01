@@ -46,13 +46,17 @@ function sumReads(a: ReadOutcomes, b: ReadOutcomes): ReadOutcomes {
     ok: a.ok + b.ok,
     doorman: a.doorman + b.doorman,
     jsShell: a.jsShell + b.jsShell,
+    // `?? 0` because episodes.jsonl is APPEND-ONLY and rows written before
+    // `frames` existed have no such field. Summing `undefined` would turn the
+    // whole column into NaN and quietly poison every other number beside it.
+    frames: (a.frames ?? 0) + (b.frames ?? 0),
     empty: a.empty + b.empty,
     fetchFailed: a.fetchFailed + b.fetchFailed,
     pulls: a.pulls + b.pulls,
   };
 }
 
-const EMPTY: ReadOutcomes = { total: 0, ok: 0, doorman: 0, jsShell: 0, empty: 0, fetchFailed: 0, pulls: 0 };
+const EMPTY: ReadOutcomes = { total: 0, ok: 0, doorman: 0, jsShell: 0, frames: 0, empty: 0, fetchFailed: 0, pulls: 0 };
 
 function main(): void {
   loadEnv();
@@ -125,6 +129,7 @@ function main(): void {
   row("ok", reads.ok, GRN);
   row("doorman", reads.doorman, RED);
   row("js-shell", reads.jsShell, RED);
+  row("frames", reads.frames, RED);
   row("empty", reads.empty, DIM);
   row("fetch-failed", reads.fetchFailed, DIM);
   if (reads.pulls > 0) console.log(DIM(`  (${reads.pulls} handle pulls — search-within-page, not counted)`));

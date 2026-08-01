@@ -3,7 +3,7 @@ import { classifyTasks } from "../metrics.js";
 import type { Episode, ReadOutcomes } from "../episode.js";
 
 function ep(reads: Partial<ReadOutcomes>, extra: Partial<Episode> = {}): Episode {
-  const r: ReadOutcomes = { total: 0, ok: 0, doorman: 0, jsShell: 0, empty: 0, fetchFailed: 0, pulls: 0, ...reads };
+  const r: ReadOutcomes = { total: 0, ok: 0, doorman: 0, jsShell: 0, frames: 0, empty: 0, fetchFailed: 0, pulls: 0, ...reads };
   return {
     id: "x", startedAt: "", ms: 0, model: "m", goal: "g", reason: "done",
     searches: 1, reads: r, escalationRate: 0, llmCalls: 2, promptTokens: 0, completionTokens: 0,

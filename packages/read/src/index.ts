@@ -22,6 +22,7 @@ export {
   fallbackExtract,
   getOutline,
   documentTitle,
+  frameSources,
 } from "./extract.js";
 export { classifyMedia, isBinaryMediaType, parseMediaType } from "./media.js";
 export type { MediaLane, MediaVerdict } from "./media.js";

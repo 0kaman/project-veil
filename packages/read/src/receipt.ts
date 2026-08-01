@@ -24,10 +24,16 @@ export type Via = "fetch" | "render" | "session";
  * - `ok`         — real content extracted, trust it.
  * - `js-shell`   — HTML has no content; it's behind JavaScript. Escalate to the engine.
  * - `doorman`    — the server refused a non-browser (403/429/challenge). Blocked at this rung.
+ * - `frames`     — the content is in CHILD DOCUMENTS these bytes only reference.
+ *                  Escalate: the engine composes them. Distinct from `js-shell`
+ *                  because "it's behind JavaScript" is a false diagnosis here and
+ *                  the arena measured an agent acting on it — two of five runs
+ *                  concluded the page was "served with a content type that isn't
+ *                  text" and went looking for the wrong thing.
  * - `empty`      — fetched fine, but there is genuinely almost nothing here.
  * - `fetch-failed` — never got bytes (DNS, timeout, connection).
  */
-export type ReadStatus = "ok" | "js-shell" | "doorman" | "empty" | "fetch-failed";
+export type ReadStatus = "ok" | "js-shell" | "doorman" | "frames" | "empty" | "fetch-failed";
 
 /** Which extractor produced the text — Readability, or the density fallback that
  * rescues pages Readability wrongly discards. `text` means the body was never

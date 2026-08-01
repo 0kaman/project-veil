@@ -71,13 +71,39 @@ tests, or by a week of live playground runs.
    Fixed; matches label or value, and refuses with the real options when neither hits.
 3. **`veil_read` crashes on non-HTML content** — raw markdown gives
    `Cannot destructure property 'firstElementChild'`. Found while researching PinchTab's
-   own docs. **Still open.**
+   own docs. **Fixed 2026-08-01**, and the investigation found a worse silent half beside
+   it: a text body carrying any stray tag reported `empty · 0 raw words` — RFC 7231's
+   32,091 words read as zero. Verified by test; **the arena has not been re-run**, so
+   every number above stands as measured.
+4. **Same-origin iframe content was invisible** — the `iframe` loss below. **Fixed
+   2026-08-01**: frames in the page's own renderer process are walked, spliced into the
+   graph and the serialized HTML, and clickable. Cross-**site** frames still are not, and
+   are now counted and named rather than silently absent. Verified by test — 66 Layer-2
+   tests against real Chrome, and the fixture's `6193` now reaches the read — but **not
+   re-measured in the arena**, so `0/5` remains the last measured number and
+   `veilExpected: "lose"` is left alone. It is pre-registered.
+5. **The frameset receipt was confidently wrong**, in two places. `veil_read` on a
+   frameset URL said `empty · almost no readable text` and named no recovery while the
+   bytes it held said `<frame src="/frame-menu">`; two of five runs acted on that and
+   concluded the page was "served with a content type that isn't text". It now reports
+   `frames`, names the documents, and escalates. Separately the lean view printed
+   `(none — nothing on this page is actionable)`. **Both fixed. The `frameset` task will
+   still fail**: its menu is `<li onclick>`, `listitem` is not a doer role, and
+   `/frame-menu` opened directly already reported `ACTIONS (0)` with no frames involved.
+   That is a separate, still-open defect.
+
+Two of those fixes shipped a fresh instance of the fault they were written to remove, and
+adversarial verification caught both before commit — the frame notice switched itself off
+the moment perception landed, and the media-lane fix silently disabled escalation. Both
+sat behind fixtures that modelled a scheme the code had stopped producing. See DECISIONS
+2026-08-01.
 
 ## Where Veil loses
 
-**`iframe`, 0/5 against 5/5.** Veil reads only the top frame's AX tree, so same-origin
-iframe content is invisible. Predicted in advance, and the cleanest capability gap in
-the set. `frameset` (JS-built menu, no hrefs) defeats both, 0/5 and 1/5 — that is the
+**`iframe`, 0/5 against 5/5.** Veil read only the top frame's AX tree, so same-origin
+iframe content was invisible. Predicted in advance, and the cleanest capability gap in
+the set. Fixed 2026-08-01 (#4 above) — but the arena was not re-run, so this row is the
+last measured number and stands. `frameset` (JS-built menu, no hrefs) defeats both, 0/5 and 1/5 — that is the
 shape of a real router admin UI, where Veil reports `ACTIONS (0)` on a page full of
 controls.
 

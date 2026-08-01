@@ -289,3 +289,78 @@ describe("fixing the text lane must not disable the ladder", () => {
     expect(ok.receipt.words).toBeGreaterThan(300);
   });
 });
+
+/**
+ * A frameset's own bytes carry no prose. The read tier used to call that
+ * `empty · almost no readable text (0 raw words)` and name no recovery, while
+ * the very bytes it held said `<frame src="/frame-menu">`. Two of five arena
+ * `frameset` runs acted on that receipt and concluded the page was "served with
+ * a content type that isn't text" — a false diagnosis the receipt handed them.
+ */
+describe("a page whose content is in child documents says so", () => {
+  const FRAMESET = `<!doctype html><html><head><title>Console</title></head>
+    <frameset cols="200,*"><frame name="menu" src="/frame-menu">
+    <frame name="body" src="/frame-body"></frameset></html>`;
+
+  it("reports `frames`, not `empty`, and names the documents", async () => {
+    const r = await new Reader({
+      fetchImpl: mockFetch(FRAMESET, { contentType: "text/html" }),
+    }).read("https://router.test/");
+
+    expect(r.receipt.status).toBe("frames");
+    expect(r.receipt.note).toContain("/frame-menu");
+    expect(r.receipt.note).toContain("/frame-body");
+    expect(r.receipt.note).toMatch(/veil_open/);
+    expect(r.receipt.note).not.toMatch(/almost no readable text/);
+  });
+
+  it("escalates, because the engine composes child documents and a fetch cannot", async () => {
+    let rendered = false;
+    const renderer = async (url: string) => {
+      rendered = true;
+      return { html: fixture("clean-article"), finalUrl: url, ok: true, ms: 800 };
+    };
+    const r = await new Reader({
+      fetchImpl: mockFetch(FRAMESET, { contentType: "text/html" }),
+      renderer,
+    }).read("https://router.test/");
+
+    expect(rendered).toBe(true);
+    expect(r.receipt.status).toBe("ok");
+  });
+
+  it("does NOT blame JavaScript when a frameset also carries a script", async () => {
+    // `frames` is checked before `js-shell` precisely for this: the diagnosis
+    // decides where the agent looks next, and "behind JavaScript" sends it after
+    // the wrong thing on a page whose content is one document down.
+    const r = await new Reader({
+      fetchImpl: mockFetch(
+        `<!doctype html><html><head><script src="/a.js"></script></head>
+         <frameset><frame src="/menu"></frameset></html>`,
+        { contentType: "text/html" },
+      ),
+    }).read("https://router.test/");
+
+    expect(r.receipt.status).toBe("frames");
+  });
+
+  it("an ordinary JS shell is still a JS shell", async () => {
+    // The complement — `frames` must not swallow the js-shell path.
+    const r = await new Reader({
+      fetchImpl: mockFetch(fixture("js-shell"), { contentType: "text/html" }),
+    }).read("https://spa.test/");
+    expect(r.receipt.status).toBe("js-shell");
+  });
+
+  it("ignores srcs that are not recoveries", async () => {
+    const r = await new Reader({
+      fetchImpl: mockFetch(
+        `<!doctype html><html><body><p>hi</p>
+         <iframe src="about:blank"></iframe>
+         <iframe src="javascript:void(0)"></iframe></body></html>`,
+        { contentType: "text/html" },
+      ),
+    }).read("https://x.test/");
+    expect(r.receipt.status).toBe("empty");
+  });
+});

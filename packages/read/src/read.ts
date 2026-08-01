@@ -16,6 +16,7 @@ import {
   denseExtract,
   getOutline,
   hasScripts,
+  frameSources,
   rawTextOrNull,
   readabilityExtract,
 } from "./extract.js";
@@ -115,7 +116,7 @@ function cutNote(cause: BudgetResult["cause"], config: ReadConfig): string | und
 
 /** Statuses worth escalating to a render — the browser can plausibly help. */
 function shouldEscalate(status: Receipt["status"]): boolean {
-  return status === "js-shell" || status === "doorman";
+  return status === "js-shell" || status === "doorman" || status === "frames";
 }
 
 interface ClassifyCtx {
@@ -223,9 +224,22 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
     } else {
       let status: Receipt["status"];
       let note: string;
+      const frames = via === "session" ? [] : frameSources(html);
       if (challenged) {
         status = "doorman";
         note = "bot challenge — server refused";
+      } else if (frames.length > 0) {
+        // BEFORE js-shell, because a frameset page routinely carries a script
+        // too and "it's behind JavaScript" would send the agent after the wrong
+        // thing. Name the documents: the recovery is the engine, which composes
+        // them, and the URLs are right here in the bytes we already hold.
+        status = "frames";
+        const shown = frames.slice(0, 6).join(", ");
+        note =
+          `no prose here — this page's content is in ${frames.length} child ` +
+          `document(s) it only references (${shown}${frames.length > 6 ? ", …" : ""}). ` +
+          `veil_open this URL and read the session; the engine composes child ` +
+          `documents, a plain fetch cannot.`;
       } else if (via !== "session" && rawWords < 200 && hasScripts(html)) {
         status = "js-shell";
         note = "no content in the HTML — it's behind JavaScript";

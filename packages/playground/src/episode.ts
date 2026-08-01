@@ -21,6 +21,7 @@ export interface ReadOutcomes {
   ok: number;
   doorman: number;
   jsShell: number;
+  frames: number;
   empty: number;
   fetchFailed: number;
   pulls: number;
@@ -35,7 +36,7 @@ export interface Episode {
   reason: string;
   searches: number;
   reads: ReadOutcomes;
-  /** (doorman + jsShell) / fresh reads — the fraction that needed the engine. */
+  /** (doorman + jsShell + frames) / fresh reads — the fraction that needed the engine. */
   escalationRate: number;
   llmCalls: number;
   promptTokens: number;
@@ -50,7 +51,7 @@ export interface Episode {
 function readStatus(via: string | null): keyof ReadOutcomes | "pull" | null {
   if (!via) return null;
   if (via.startsWith("via: handle")) return "pull"; // search-within-page, not a read
-  const m = via.match(/·\s*(ok|doorman|js-shell|empty|fetch-failed)\b/i);
+  const m = via.match(/·\s*(ok|doorman|js-shell|frames|empty|fetch-failed)\b/i);
   if (!m) return null;
   switch (m[1].toLowerCase()) {
     case "ok":
@@ -59,6 +60,8 @@ function readStatus(via: string | null): keyof ReadOutcomes | "pull" | null {
       return "doorman";
     case "js-shell":
       return "jsShell";
+    case "frames":
+      return "frames";
     case "empty":
       return "empty";
     case "fetch-failed":
@@ -78,7 +81,7 @@ export class EpisodeRecorder {
   private goal = "";
   private id = "";
   private searches = 0;
-  private reads: ReadOutcomes = { total: 0, ok: 0, doorman: 0, jsShell: 0, empty: 0, fetchFailed: 0, pulls: 0 };
+  private reads: ReadOutcomes = { total: 0, ok: 0, doorman: 0, jsShell: 0, frames: 0, empty: 0, fetchFailed: 0, pulls: 0 };
   private llmCalls = 0;
   private promptTokens = 0;
   private completionTokens = 0;
@@ -156,7 +159,9 @@ export class EpisodeRecorder {
     // A launch-and-quit with no activity is noise.
     if (this.reads.total === 0 && this.searches === 0) return;
 
-    const escalated = this.reads.doorman + this.reads.jsShell;
+    // `frames` belongs here: the content is in child documents a fetch cannot
+    // compose, and the engine is exactly the rung that can.
+    const escalated = this.reads.doorman + this.reads.jsShell + this.reads.frames;
     const episode: Episode = {
       id: this.id || `ep-${this.t0}`,
       startedAt: new Date(this.t0).toISOString(),

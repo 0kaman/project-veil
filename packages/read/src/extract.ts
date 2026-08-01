@@ -242,3 +242,28 @@ export function documentTitle(html: string): string | null {
 export function hasScripts(html: string): boolean {
   return /<script[\s>]/i.test(html);
 }
+
+/**
+ * The `src` of every `<frame>`/`<iframe>` in the markup, in document order.
+ *
+ * A frameset's own bytes carry no prose — the content is one document down —
+ * and the read tier had no way to say so. Measured on the arena fixture:
+ * `veil_read <frameset url>` returned `empty · almost no readable text (0 raw
+ * words)` naming no recovery, while the very bytes it held said
+ * `<frame src="/frame-menu">`. Two of five arena runs acted on that receipt and
+ * concluded the page was "served with a content type that isn't text".
+ *
+ * Regex rather than a parse because this runs on the thin-result path, where a
+ * DOM has not necessarily been built and the answer is needed to pick a status.
+ * `about:blank` and `javascript:` are dropped — they are not recoveries.
+ */
+export function frameSources(html: string): string[] {
+  const out: string[] = [];
+  const re = /<(?:i?frame)\b[^>]*?\ssrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))/gi;
+  for (const m of html.matchAll(re)) {
+    const src = (m[2] ?? m[3] ?? m[4] ?? "").trim();
+    if (!src || /^(about:|javascript:|data:)/i.test(src)) continue;
+    if (!out.includes(src)) out.push(src);
+  }
+  return out;
+}
