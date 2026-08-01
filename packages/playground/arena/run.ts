@@ -26,6 +26,8 @@ import { VeilMcp } from "../src/mcp.js";
 import { Mistral } from "../src/mistral.js";
 import { AgentSession, type SessionDeps } from "../src/agent.js";
 import { TASKS, type Task } from "./tasks.js";
+import { Live, render } from "./live.js";
+import { loadEnv } from "../src/config.js";
 
 interface Contender {
   name: string;
@@ -80,7 +82,7 @@ const schemaCost = (tools: Array<{ name: string; description: string; parameters
     ) / 4,
   );
 
-async function runOnce(c: Contender, task: Task, run: number, apiKey: string): Promise<RunResult> {
+async function runOnce(c: Contender, task: Task, run: number, apiKey: string, live: Live): Promise<RunResult> {
   const tracer = new Tracer(OUT);
   const mcp = new VeilMcp(c.spawn, tracer);
   const base: RunResult = {
@@ -111,6 +113,9 @@ async function runOnce(c: Contender, task: Task, run: number, apiKey: string): P
       completionTokens += Number(ev.completionTokens ?? 0);
     }
     if (ev.kind === "tool.call") toolCalls++;
+    // Feed the live view from the SAME event stream the totals come from, so
+    // what is on screen and what lands in results.json cannot drift apart.
+    if (ev.kind === "llm.response") live.tokens(promptTokens);
   });
 
   const t0 = Date.now();
@@ -128,10 +133,13 @@ async function runOnce(c: Contender, task: Task, run: number, apiKey: string): P
         assistantDone: (t: string) => {
           if (t.trim()) answer = t;
         },
-        toolStart: () => {},
+        toolStart: (t) => live.tool(t.name),
         toolEnd: () => {},
-        note: () => {},
-        error: () => {},
+        // A nudge, a loop warning or "hit max steps" is the earliest sign a
+        // contender is thrashing. Surfacing it live is how the 246k-token
+        // `form` burn would have been caught during the run rather than after.
+        note: (m: string) => live.note(m),
+        error: (m: string) => live.note(`error: ${m}`),
       },
       maxSteps: task.maxSteps,
       prune: true,
@@ -161,6 +169,10 @@ const median = (xs: number[]): number =>
 const spread = (xs: number[]): number => (xs.length < 2 ? 0 : Math.max(...xs) - Math.min(...xs));
 
 async function main(): Promise<void> {
+  // .env is where the keys live; without this the documented command exits 1
+  // on a machine that has them, which reads as a missing key rather than a
+  // missing loader.
+  loadEnv();
   const apiKey = (process.env.MISTRAL_API_KEY ?? "").trim();
   if (!apiKey) {
     process.stderr.write("\nMISTRAL_API_KEY is not set — add it to .env\n\n");
@@ -177,6 +189,20 @@ async function main(): Promise<void> {
   const results: RunResult[] = [];
   let spent = 0;
 
+  const live = new Live(OUT, {
+    startedAt: Date.now(),
+    totalCells: tasks.length * RUNS * CONTENDERS.length,
+    runs: RUNS,
+    tasks: tasks.map((t) => t.id),
+    contenders: CONTENDERS.map((c) => c.name),
+    budget: BUDGET,
+  });
+  process.stdout.write(`  live view:  pnpm --filter @veil/playground arena:watch\n\n`);
+  // Redraw the one-line status on a timer as well as on events, so a long cell
+  // still visibly ticks. Unref'd: it must never hold the process open.
+  const ticker = setInterval(() => process.stdout.write(`\r${live.line()}`), 5000);
+  ticker.unref();
+
   // Interleaved: every contender sees the same conditions for a given task+run.
   outer: for (let run = 1; run <= RUNS; run++) {
     for (const task of tasks) {
@@ -185,18 +211,32 @@ async function main(): Promise<void> {
           process.stdout.write(`  ! budget reached (${spent.toLocaleString()}) — stopping\n`);
           break outer;
         }
-        const r = await runOnce(c, task, run, apiKey);
+        live.begin(c.name, task.id, run);
+        const r = await runOnce(c, task, run, apiKey, live);
         spent += r.promptTokens;
         results.push(r);
+        live.end({
+          contender: c.name, task: task.id, run,
+          ok: r.ok, ms: r.ms, promptTokens: r.promptTokens, toolCalls: r.toolCalls,
+          error: r.error,
+        });
         process.stdout.write(
-          `  ${r.ok ? "PASS" : "fail"}  ${c.name.padEnd(9)} ${task.id.padEnd(9)} run${run}  ` +
-            `${String(r.ms).padStart(6)}ms  ${r.promptTokens.toLocaleString().padStart(9)} tok` +
+          `\r  ${r.ok ? "PASS" : "fail"}  ${c.name.padEnd(9)} ${task.id.padEnd(9)} run${run}  ` +
+            `${String(r.ms).padStart(6)}ms  ${r.promptTokens.toLocaleString().padStart(9)} tok  ` +
+            `${String(r.toolCalls).padStart(2)} calls` +
             `${r.error ? `  [${r.error.slice(0, 48)}]` : ""}\n`,
         );
+        process.stdout.write(`${live.line()}\n`);
+        // Written after EVERY cell, not at the end: two rounds have already been
+        // lost, and partial evidence beats none.
         writeFileSync(resolve(OUT, "results.json"), JSON.stringify(results, null, 2));
       }
     }
   }
+
+  live.finish();
+  clearInterval(ticker);
+  process.stdout.write(render(live.snapshot));
 
   // ── report ───────────────────────────────────────────────────────────────
   process.stdout.write("\n  ── by task ──\n");

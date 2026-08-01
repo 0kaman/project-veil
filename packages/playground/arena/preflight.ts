@@ -18,6 +18,7 @@ import { VeilMcp } from "../src/mcp.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadEnv } from "../src/config.js";
 
 const ok = (s: string) => `  ✓ ${s}`;
 const bad = (s: string) => `  ✗ ${s}`;
@@ -39,15 +40,19 @@ const CONTENDERS = [
   },
 ];
 
-function sh(cmd: string, args: string[]): string {
+function sh(cmd: string, args: string[], timeout = 20_000): string {
   try {
-    return execFileSync(cmd, args, { encoding: "utf8", timeout: 20_000 }).trim();
+    return execFileSync(cmd, args, { encoding: "utf8", timeout }).trim();
   } catch (err) {
     return `ERR:${err instanceof Error ? err.message.split("\n")[0] : String(err)}`;
   }
 }
 
 async function main(): Promise<void> {
+  // .env is where the keys live; without this the documented command exits 1
+  // on a machine that has them, which reads as a missing key rather than a
+  // missing loader.
+  loadEnv();
   let fatal = 0;
   say("\n  ARENA PREFLIGHT\n");
 
@@ -114,6 +119,47 @@ async function main(): Promise<void> {
       say(bad("veil      BRAVE_API_KEY is EMPTY in the container — its search tier is dead"));
       say("            fix: pnpm --filter @veil/playground arena:up   (sources .env)");
       fatal++;
+    }
+  }
+
+  // ── BOTH CONTENDERS UNGATED ─────────────────────────────────────────────
+  // The check that did not exist, and its absence is why round 1 was void:
+  // PinchTab blocked 36 of 41 runs on its allowlist, and preflight reported
+  // READY. Verifying Veil's key while never asking whether the OTHER contender
+  // could reach anything is a preflight that only checks its author's side.
+  //
+  // Two guards, and they fail in OPPOSITE directions, so both are probed live:
+  // the website whitelist blocks the open web, and the SSRF/private-IP guard
+  // blocks the fixtures. Turning off only the first swaps one void for another.
+  if (!fatal) {
+    say("");
+    const cfg = sh("docker", ["exec", "arena-pinchtab", "sh", "-lc", "cat /data/.pinchtab/config.json"]);
+    const idpiOff = /"idpi"\s*:\s*\{[^}]*"enabled"\s*:\s*false/s.test(cfg);
+    if (idpiOff) say(ok("pinchtab  IDPI disabled"));
+    else {
+      say(bad("pinchtab  IDPI is ENABLED — it will block domains and the run is void"));
+      say("            fix: pnpm --filter @veil/playground arena:ungate");
+      fatal++;
+    }
+
+    // Live navigation beats a config file. One private, one public — the two
+    // guards that can each void the whole suite on their own.
+    for (const [label, url] of [
+      ["fixtures (private IP)", "http://fixtures:8080/spa"],
+      ["open web", "https://www.nasa.gov"],
+    ] as Array<[string, string]>) {
+      const out = sh("docker", [
+        "exec",
+        "arena-pinchtab",
+        "sh",
+        "-lc",
+        `pinchtab nav ${JSON.stringify(url)} 2>&1`,
+      ], 90_000);
+      if (/error|blocked|not in allowlist|refused|403/i.test(out)) {
+        say(bad(`pinchtab  CANNOT reach ${label} — ${out.split("\n")[0]!.slice(0, 70)}`));
+        say("            fix: pnpm --filter @veil/playground arena:ungate");
+        fatal++;
+      } else say(ok(`pinchtab  can reach ${label}`));
     }
   }
 
