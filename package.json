@@ -9,7 +9,7 @@
     "test:watch": "turbo test:watch",
     "clean": "turbo clean",
     "typecheck": "turbo typecheck",
-    "test:integration": "pnpm --filter @veil/core test:integration",
+    "test:integration": "pnpm --recursive --if-present test:integration",
     "check": "turbo typecheck build test",
     "play": "pnpm --filter @veil/playground dev",
     "play:analyse": "pnpm --filter @veil/playground analyse",

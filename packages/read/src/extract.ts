@@ -38,12 +38,35 @@ function blockText(doc: { querySelectorAll: (s: string) => ArrayLike<unknown> })
   return lines.join("\n\n");
 }
 
-/** All visible text with boilerplate removed — the "is there content at all?"
- * signal. High rawWords + low extracted words ⇒ the extractor missed it. */
-export function rawText(html: string): string {
+/**
+ * All visible text with boilerplate removed — the "is there content at all?"
+ * signal. High rawWords + low extracted words ⇒ the extractor missed it.
+ *
+ * Returns NULL when the input did not parse as a document at all. That is not a
+ * detail: linkedom's `document.body` is a getter that reaches through
+ * `documentElement`, so on a body with zero elements it THROWS rather than
+ * returning null — `document.body?.textContent` is dead code, the `?.` guards a
+ * null result and not a throwing getter. This was the single crash site behind
+ * "veil_read on a raw .md URL → Cannot destructure property
+ * 'firstElementChild'"; measured to be the only accessor in this file that
+ * throws on a tagless document (querySelectorAll, querySelector and textContent
+ * all return safely, and Readability's own throw is already caught below).
+ *
+ * The caller must treat null as "this is not HTML, read it as text" — NOT as
+ * "empty". Returning empty here is what made RFC 7231's 32,091 words report as
+ * zero, and it is the failure mode this signal exists to prevent.
+ */
+export function rawTextOrNull(html: string): string | null {
   const { document } = parseHTML(html);
+  if (!document.documentElement) return null;
   document.querySelectorAll(BOILERPLATE).forEach((el) => el.remove());
   return tidy((document.body?.textContent ?? "").replace(/\s+/g, " "));
+}
+
+/** Back-compat wrapper: raw text, with "did not parse" flattened to empty.
+ * Prefer `rawTextOrNull` anywhere the difference matters. */
+export function rawText(html: string): string {
+  return rawTextOrNull(html) ?? "";
 }
 
 /** Primary extractor. Empty text when Readability declines the page. */

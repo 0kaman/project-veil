@@ -9,12 +9,32 @@ export function fixture(name: string): string {
   return readFileSync(join(here, "fixtures", `${name}.html`), "utf8");
 }
 
-/** A fetch that always returns the given HTML, for offline tests. */
-export function mockFetch(html: string, opts: { status?: number; url?: string } = {}): FetchLike {
+/**
+ * A fetch that always returns the given body, for offline tests.
+ *
+ * `contentType` produces a `headers.get()` shim. NOTE what this cannot prove: a
+ * plain-object shim would pass even if the real-`Headers` contract were read
+ * wrongly (case-insensitivity, `; charset=…` parameters). That is what the
+ * Layer-2 suite in `integration/` is for.
+ */
+export function mockFetch(
+  html: string,
+  opts: { status?: number; url?: string; contentType?: string | null; onText?: () => void } = {},
+): FetchLike {
   return async (url) => ({
     status: opts.status ?? 200,
     url: opts.url ?? url,
-    text: async () => html,
+    headers:
+      opts.contentType === undefined
+        ? undefined
+        : {
+            get: (name: string) =>
+              name.toLowerCase() === "content-type" ? opts.contentType ?? null : null,
+          },
+    text: async () => {
+      opts.onText?.();
+      return html;
+    },
   });
 }
 

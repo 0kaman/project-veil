@@ -6,6 +6,7 @@
  * `pull(handle, query)` returns only the relevant paragraphs on demand — which
  * is also search-within-page, so there is no separate grep verb.
  */
+import { budgetParagraphs } from "./budget.js";
 import { countWords } from "./extract.js";
 
 export interface StoredRead {
@@ -50,7 +51,12 @@ export class HandleStore {
    * Returns null for an unknown handle so the caller can report it honestly
    * rather than silently returning nothing.
    */
-  pull(id: string, query: string | undefined, budgetWords: number): Pull | null {
+  pull(
+    id: string,
+    query: string | undefined,
+    budgetWords: number,
+    budgetChars: number = budgetWords * 8,
+  ): Pull | null {
     const stored = this.map.get(id);
     if (!stored) return null;
 
@@ -72,26 +78,26 @@ export class HandleStore {
       picked = paras;
     }
 
-    // Fill up to the budget, paragraph by paragraph — never cut mid-paragraph.
-    const out: string[] = [];
-    let words = 0;
-    for (const p of picked) {
-      const w = countWords(p);
-      if (words + w > budgetWords && out.length > 0) break;
-      out.push(p);
-      words += w;
-    }
+    // Fill up to the budget, paragraph by paragraph. Cutting mid-paragraph is a
+    // last resort — but it IS done, and reported, because a single paragraph
+    // that is the whole document used to be returned entire (budget.ts).
+    const cut = budgetParagraphs(picked, budgetWords, budgetChars);
 
     const note =
       query && matched === 0
         ? `no paragraph mentions "${query}" — try the outline, or a broader term`
-        : picked.length > out.length
-          ? `returned ${out.length} of ${picked.length} matching paragraphs — narrow the query for more`
-          : undefined;
+        : cut.hardCut
+          ? (cut.cause === "chars"
+              ? `cut mid-paragraph at the ${budgetChars}-character ceiling`
+              : `cut mid-paragraph — this text has no paragraph breaks to cut on`) +
+            (query ? "; narrow the query to land on a smaller span" : "")
+          : cut.offered > cut.kept
+            ? `returned ${cut.kept} of ${cut.offered} ${query ? "matching " : ""}paragraphs — ${query ? "narrow the query for more" : "pull with a query for a specific part"}`
+            : undefined;
 
     return {
-      text: out.join("\n\n"),
-      words,
+      text: cut.text,
+      words: cut.words,
       totalWords,
       matched,
       paragraphs: paras.length,

@@ -16,9 +16,11 @@ import {
   denseExtract,
   getOutline,
   hasScripts,
-  rawText,
+  rawTextOrNull,
   readabilityExtract,
 } from "./extract.js";
+import { budgetParagraphs, type BudgetResult } from "./budget.js";
+import { classifyMedia, isBinaryMediaType, parseMediaType } from "./media.js";
 import type { HandleStore } from "./handles.js";
 import type { Receipt, Via } from "./receipt.js";
 
@@ -40,6 +42,10 @@ export interface ReadConfig {
   fallbackRaw: number;
   /** Words returned inline before truncating to a handle. */
   budgetWords: number;
+  /** Character ceiling on the inline return. Words are a meaningless unit on
+   * minified content — 805 KB of JSON is ~10,836 whitespace-"words" — so the
+   * budget needs a second, absolute limit. */
+  budgetChars: number;
   timeoutMs: number;
   userAgent: string;
 }
@@ -55,6 +61,7 @@ export function defaultConfig(): ReadConfig {
     okFloor: n(process.env.VEIL_READ_OK_FLOOR, 60),
     fallbackRaw: n(process.env.VEIL_READ_FALLBACK_RAW, 600),
     budgetWords: n(process.env.VEIL_READ_BUDGET_WORDS, 4000),
+    budgetChars: n(process.env.VEIL_READ_BUDGET_CHARS, 32_000),
     timeoutMs: n(process.env.VEIL_READ_TIMEOUT_MS, 10_000),
     userAgent: process.env.VEIL_READ_UA ?? CHROME_UA,
   };
@@ -63,6 +70,10 @@ export function defaultConfig(): ReadConfig {
 export interface FetchResponse {
   status: number;
   url: string;
+  /** Optional so injected test fetchers and `readHtml` still satisfy this; a
+   * real `Response` satisfies it structurally. An absent header degrades to the
+   * body sniff, which is stated on the receipt rather than assumed away. */
+  headers?: { get(name: string): string | null };
   text(): Promise<string>;
 }
 export type FetchLike = (url: string, init?: unknown) => Promise<FetchResponse>;
@@ -82,18 +93,24 @@ const DOORMAN_STATUS = new Set([401, 403, 429, 503]);
 const CHALLENGE =
   /captcha|are you a robot|unusual traffic|cf-challenge|challenge-platform|please enable (java)?script|checking your browser|verify you are human/i;
 
-/** Cut text to a word budget on paragraph boundaries — never mid-paragraph. */
-function truncateToParagraphs(text: string, budgetWords: number): { text: string; words: number } {
-  const paras = text.split(/\n\n+/);
-  const kept: string[] = [];
-  let words = 0;
-  for (const p of paras) {
-    const w = countWords(p);
-    if (words + w > budgetWords && kept.length > 0) break;
-    kept.push(p);
-    words += w;
+/** Cut text to the budget on paragraph boundaries where possible — and where it
+ * is NOT possible (one paragraph is the whole body), cut anyway and say so.
+ * See budget.ts: a budget that declines to cut is not a budget. */
+function truncateToBudget(text: string, config: ReadConfig) {
+  return budgetParagraphs(text.split(/\n\n+/), config.budgetWords, config.budgetChars);
+}
+
+/** Name the limit that ACTUALLY bound. "no paragraph breaks to cut on" is false
+ * of RFC 7231, which has them in abundance and is cut by the character ceiling
+ * — and a receipt that misnames its own reason is the defect class, in small. */
+function cutNote(cause: BudgetResult["cause"], config: ReadConfig): string | undefined {
+  if (cause === "chars") {
+    return `cut mid-paragraph at the ${config.budgetChars}-character ceiling — pull the rest with the handle`;
   }
-  return { text: kept.join("\n\n"), words };
+  if (cause === "oversize-unit") {
+    return `cut mid-paragraph — this body has no paragraph breaks to cut on; pull the rest with the handle`;
+  }
+  return undefined;
 }
 
 /** Statuses worth escalating to a render — the browser can plausibly help. */
@@ -110,6 +127,9 @@ interface ClassifyCtx {
   html: string;
   store: HandleStore;
   config: ReadConfig;
+  /** Normalised content-type, when the server gave one. Carried onto the
+   * receipt; also the reason this body is in the HTML lane at all. */
+  mediaType?: string | null;
 }
 
 /**
@@ -131,6 +151,7 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
     totalWords: 0,
     rawWords: 0,
     truncated: false,
+    mediaType: ctx.mediaType ?? null,
     ...over,
   });
 
@@ -145,8 +166,18 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
     };
   }
 
+  // Nothing in this body parsed as an element, so it is not HTML however it was
+  // labelled — an empty 200, or a server that stamps `text/html` on a plain-text
+  // page. Route it to the TEXT lane rather than calling it empty: an empty
+  // verdict here is exactly the lie that made RFC 7231's 32,091 words read as
+  // zero, and it is what a "catch the TypeError and return empty" fix would
+  // silently reintroduce. content-type cannot catch this case and this cannot
+  // catch content-type's; both signals are needed.
+  const rawOrNull = rawTextOrNull(html);
+  if (rawOrNull === null) return classifyText({ ...ctx, body: html });
+
   // Extract: Readability, then the fallback if it declined content that's present.
-  const rawWords = countWords(rawText(html));
+  const rawWords = countWords(rawOrNull);
   const primary = readabilityExtract(html);
   let text = primary.text;
   let extractor: Receipt["extractor"] = "readability";
@@ -218,15 +249,19 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
   let outText = text;
   let truncated = false;
   let handle: string | null = null;
-  if (words > config.budgetWords) {
-    const cut = truncateToParagraphs(text, config.budgetWords);
+  let cutReason: BudgetResult["cause"] = "fit";
+  if (words > config.budgetWords || text.length > config.budgetChars) {
+    const cut = truncateToBudget(text, config);
     outText = cut.text;
     words = cut.words;
+    cutReason = cut.cause;
     truncated = true;
     handle = store.put({ url: finalUrl, title, fullText: text, outline });
   }
   const note =
-    thin ?? (totalWords < config.cleanWords ? `short page (${totalWords} words) — may be a stub` : undefined);
+    thin ??
+    cutNote(cutReason, config) ??
+    (totalWords < config.cleanWords ? `short page (${totalWords} words) — may be a stub` : undefined);
 
   return {
     receipt: base({ status: "ok", extractor, words, totalWords, rawWords, truncated, note }),
@@ -234,6 +269,105 @@ function classifyHtml(ctx: ClassifyCtx): ReadResult {
     text: outText,
     outline,
     handle,
+  };
+}
+
+/**
+ * A body that was never HTML: markdown, JSON, CSV, plain text.
+ *
+ * There is no extraction to do — the bytes ARE the content — so there is no DOM
+ * parse here at all, which is also why nothing can throw. And there is no
+ * escalation: a render cannot add information to a file that is already exactly
+ * its own text, so the text lane never summons Chrome (substantively the
+ * 2026-07-26 "no rung above it" argument).
+ *
+ * Short text keeps its text and is flagged short, exactly as the session tier
+ * does. Discarding a 30-word README because it failed a prose threshold would
+ * throw away the whole answer.
+ */
+function classifyText(ctx: ClassifyCtx & { body: string }): ReadResult {
+  const { body, config, store, url, finalUrl, httpStatus, via, ms } = ctx;
+  const mediaType = ctx.mediaType ?? null;
+  const base = (over: Partial<Receipt>): Receipt => ({
+    via, url, finalUrl, httpStatus, ms,
+    status: "fetch-failed", extractor: "none",
+    words: 0, totalWords: 0, rawWords: 0, truncated: false, mediaType,
+    ...over,
+  });
+
+  if (DOORMAN_STATUS.has(httpStatus)) {
+    return {
+      receipt: base({ status: "doorman", note: `HTTP ${httpStatus} — server refused` }),
+      title: null, text: "", outline: [], handle: null,
+    };
+  }
+
+  // Normalise line endings only — paragraph structure is what the budget and the
+  // handle-pull cut on, so it must survive.
+  const text = body.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+  const totalWords = countWords(text);
+
+  if (totalWords === 0) {
+    return {
+      receipt: base({
+        status: "empty",
+        note: `no text in the body (${mediaType ?? "no content-type"}, ${body.length} bytes)`,
+      }),
+      title: null, text: "", outline: [], handle: null,
+    };
+  }
+
+  let outText = text;
+  let words = totalWords;
+  let truncated = false;
+  let cutReason: BudgetResult["cause"] = "fit";
+  let handle: string | null = null;
+  if (words > config.budgetWords || text.length > config.budgetChars) {
+    const cut = budgetParagraphs(text.split(/\n\n+/), config.budgetWords, config.budgetChars);
+    outText = cut.text;
+    words = cut.words;
+    cutReason = cut.cause;
+    truncated = true;
+    handle = store.put({ url: finalUrl, title: null, fullText: text, outline: [] });
+  }
+
+  const note =
+    cutNote(cutReason, config) ??
+    (totalWords < config.okFloor
+      ? `short text (${totalWords} words) — that is the whole body, not a truncation`
+      : undefined);
+
+  return {
+    receipt: base({
+      status: "ok", extractor: "text", words, totalWords, rawWords: totalWords, truncated, note,
+    }),
+    title: null,
+    text: outText,
+    outline: [],
+    handle,
+  };
+}
+
+/**
+ * A body that is not text at all. Veil reads prose; there is nothing here to
+ * read, and the receipt says WHICH kind of thing it was and how big — today this
+ * came back as "almost no readable text (0 raw words)", which is a lie about a
+ * 224 KB PNG.
+ */
+function binaryResult(
+  ctx: { url: string; finalUrl: string; httpStatus: number; ms: number; mediaType: string | null; bytes: number | null },
+): ReadResult {
+  const size = ctx.bytes != null ? `, ${ctx.bytes} bytes` : "";
+  return {
+    receipt: {
+      via: "fetch", url: ctx.url, finalUrl: ctx.finalUrl, httpStatus: ctx.httpStatus, ms: ctx.ms,
+      status: "empty", extractor: "none", words: 0, totalWords: 0, rawWords: 0,
+      truncated: false, mediaType: ctx.mediaType,
+      note:
+        `${ctx.mediaType ?? "binary"}${size} — not text, so there is nothing to read here. ` +
+        `Veil has no rung that reads this format; try an HTML version of the document, or veil_search for one.`,
+    },
+    title: null, text: "", outline: [], handle: null,
   };
 }
 
@@ -265,14 +399,30 @@ export async function performRead(
 
   // 1. Fetch — the cheap path.
   let res: FetchResponse;
-  let html: string;
+  let body: string;
+  let contentType: string | null = null;
+  let earlyOut: ReadResult | null = null;
   try {
     res = await fetchImpl(url, {
       headers: { "user-agent": config.userAgent, accept: "text/html,application/xhtml+xml" },
       redirect: "follow",
       signal: AbortSignal.timeout(config.timeoutMs),
     });
-    html = await res.text();
+    contentType = res.headers?.get("content-type") ?? null;
+    // Decide BEFORE decoding: there is no point turning 224 KB of PNG into a
+    // string. A refusal status still outranks the media type, so a 403 on a PDF
+    // is reported as the doorman it is.
+    const declared = parseMediaType(contentType);
+    if (isBinaryMediaType(declared) && !DOORMAN_STATUS.has(res.status)) {
+      const len = Number(res.headers?.get("content-length") ?? NaN);
+      earlyOut = binaryResult({
+        url, finalUrl: res.url || url, httpStatus: res.status, ms: Date.now() - t0,
+        mediaType: declared, bytes: Number.isFinite(len) ? len : null,
+      });
+      body = "";
+    } else {
+      body = await res.text();
+    }
   } catch (err) {
     const name = err instanceof Error ? err.name : "Error";
     const detail = name === "TimeoutError" ? `timed out after ${config.timeoutMs}ms` : name;
@@ -280,15 +430,38 @@ export async function performRead(
       receipt: {
         via: "fetch", url, finalUrl: url, httpStatus: null, ms: Date.now() - t0,
         status: "fetch-failed", extractor: "none", words: 0, totalWords: 0, rawWords: 0,
-        truncated: false, note: detail,
+        truncated: false, mediaType: parseMediaType(contentType), note: detail,
       },
       title: null, text: "", outline: [], handle: null,
     };
   }
+  if (earlyOut) return earlyOut;
 
   const httpStatus = res.status;
   const finalUrl = res.url || url;
-  const result = classifyHtml({ url, finalUrl, httpStatus, via: "fetch", ms: Date.now() - t0, html, store, config });
+
+  // Which lane? The header is authoritative where it exists; the body sniff
+  // catches the cases it cannot speak to (see media.ts). Only the HTML lane can
+  // escalate to a browser.
+  const verdict = classifyMedia(contentType, body.slice(0, 4096));
+  const ctx = { url, finalUrl, httpStatus, via: "fetch" as Via, ms: Date.now() - t0, store, config, mediaType: verdict.mediaType };
+
+  // A refusal outranks the media type: there is no body worth classifying, and a
+  // doorman must stay escalatable (headless Chrome's real fingerprint sometimes
+  // gets past a server that refuses a bare fetch). classifyHtml returns on that
+  // branch before parsing anything, so any body shape is safe here.
+  let result: ReadResult;
+  if (DOORMAN_STATUS.has(httpStatus)) {
+    result = classifyHtml({ ...ctx, html: body });
+  } else if (verdict.lane === "binary") {
+    return binaryResult({ url, finalUrl, httpStatus, ms: ctx.ms, mediaType: verdict.mediaType, bytes: body.length });
+  } else if (verdict.lane === "text") {
+    // No rung above this one: the bytes already ARE the content, so a render
+    // cannot add information. Return without consulting the renderer.
+    return classifyText({ ...ctx, html: body, body });
+  } else {
+    result = classifyHtml({ ...ctx, html: body });
+  }
 
   // 2. Escalate to a render when the cheap path hit a wall AND a renderer exists.
   //    js-shell (content behind JS) or doorman (headless Chrome's real fingerprint
@@ -306,6 +479,10 @@ export async function performRead(
   const escalated = classifyHtml({
     url, finalUrl: rendered.finalUrl, httpStatus: 200, via: "render",
     ms: Date.now() - t0, html: rendered.html, store, config,
+    // What Chrome hands back is a serialised DOM whatever the origin server
+    // labelled it, so the rendered tier reports text/html rather than carrying
+    // the fetch's content-type forward.
+    mediaType: "text/html",
   });
   if (escalated.receipt.status === "ok") return escalated;
 

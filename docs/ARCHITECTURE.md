@@ -124,6 +124,18 @@ rather than declaring failure. The receipt must separate "no content here" from
 "extraction failed on content that's present" — the no-silent-degradation rule,
 turned on our own extractor. Fixing this moves read-wins 57% → ~67%.
 
+**Not everything is a web page.** The lane is decided from the `content-type`
+plus a byte sniff *before* anything is parsed (`media.ts`): `binary` skips the
+decode entirely and names the media type, `text` returns the bytes as-is because
+they already are the content, `html` is the pipeline above. The receipt carries
+`mediaType`, and `extractor: "text"` says plainly that this was never a page.
+
+The default lane is **html**, and that direction is load-bearing: the text lane
+returns before the escalation block, so defaulting to it silently switches off
+the bottom of the ladder — measured, a JS shell with no `content-type` stopped
+summoning Chrome and returned its own markup as the answer. A type must
+*positively* announce prose (`text/*` minus html/xml, `+json`, yaml) to divert.
+
 **Escalates to the engine on two triggers, never on a guess:**
 1. **JS shell** — the content isn't in the HTML
 2. **Doorman** — the server refuses non-browsers (Cloudflare, CAPTCHA)

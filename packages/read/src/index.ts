@@ -17,11 +17,14 @@ export { HandleStore, type StoredRead, type Pull } from "./handles.js";
 export {
   countWords,
   rawText,
+  rawTextOrNull,
   readabilityExtract,
   fallbackExtract,
   getOutline,
   documentTitle,
 } from "./extract.js";
+export { classifyMedia, isBinaryMediaType, parseMediaType } from "./media.js";
+export type { MediaLane, MediaVerdict } from "./media.js";
 
 import { HandleStore } from "./handles.js";
 import { defaultConfig, performRead, readHtml as extractHtml, type FetchLike, type ReadConfig, type ReadResult, type RenderFn } from "./read.js";
@@ -81,7 +84,7 @@ export class Reader {
    * handle so the caller reports it rather than silently returning nothing.
    */
   more(handle: string, query?: string): (Pull & { handle: string }) | null {
-    const pull = this.store.pull(handle, query, this.config.budgetWords);
+    const pull = this.store.pull(handle, query, this.config.budgetWords, this.config.budgetChars);
     return pull ? { ...pull, handle } : null;
   }
 }

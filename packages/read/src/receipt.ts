@@ -30,8 +30,10 @@ export type Via = "fetch" | "render" | "session";
 export type ReadStatus = "ok" | "js-shell" | "doorman" | "empty" | "fetch-failed";
 
 /** Which extractor produced the text — Readability, or the density fallback that
- * rescues pages Readability wrongly discards. `none` when nothing was extracted. */
-export type Extractor = "readability" | "fallback" | "none";
+ * rescues pages Readability wrongly discards. `text` means the body was never
+ * HTML (markdown, JSON, CSV, plain text): there was nothing to extract, the
+ * bytes already were the content. `none` when nothing was extracted. */
+export type Extractor = "readability" | "fallback" | "text" | "none";
 
 export interface Receipt {
   via: Via;
@@ -50,6 +52,12 @@ export interface Receipt {
    * content" (rawWords high, words low) from "genuinely empty" (both low). */
   rawWords: number;
   truncated: boolean;
+  /** Normalised `content-type` of the body (parameters stripped), or null when
+   * the server sent none. On the receipt because WHAT came back decides how the
+   * text should be read — JSON is not prose — and because a read that took the
+   * text lane rather than the HTML one should say so rather than let the caller
+   * infer it. */
+  mediaType: string | null;
   /** A short human-facing hint on a non-`ok` status. Never decorative. */
   note?: string;
 }
@@ -61,6 +69,9 @@ export function formatReceipt(r: Receipt): string {
     bits.push(`${r.words} words`);
     if (r.truncated) bits.push(`of ${r.totalWords}`);
     if (r.extractor === "fallback") bits.push("(fallback extractor)");
+    // Say when this was never a web page — the caller is holding JSON or
+    // markdown source, not prose, and that changes how to read it.
+    if (r.extractor === "text") bits.push(`(${r.mediaType ?? "plain text"}, read as text)`);
   } else {
     bits.push(r.status.toUpperCase());
     if (r.note) bits.push(`— ${r.note}`);
