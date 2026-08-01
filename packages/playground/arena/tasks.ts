@@ -54,7 +54,11 @@ export const TASKS: Task[] = [
     probes: "read tier — fetch + extract an article, no browser",
     prompt:
       "On the Wikipedia page https://en.wikipedia.org/wiki/HTTP , how many classes of HTTP status code are there, and what does the 5xx class mean? Answer briefly.",
-    check: has(/\bfive\b|\b5\b/i, /server error/i),
+    // "server error", "server failed", "server-side" and "5xx" are all correct
+    // statements of the same fact. The first cut demanded the literal phrase and
+    // scored a right answer wrong — a false negative, against Veil. A checker
+    // that is stricter than the truth measures the checker.
+    check: has(/\bfive\b|\b5\b/i, /server[- ]?(error|fail|side)|5xx/i),
     veilExpected: "win",
     maxSteps: 14,
   },

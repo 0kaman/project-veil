@@ -34,7 +34,7 @@ Reproduce: `pnpm --filter @veil/playground arena:up && arena:preflight && arena`
 
 ```
               pass      median tokens   median time      total tokens
-veil        20/31         14,170          10,676ms          789,311
+veil        21/31         14,170          10,676ms          789,311
 pinchtab    18/30         63,658          18,258ms        3,143,057
                                                     PinchTab spends 4.0×
 ```
@@ -42,7 +42,7 @@ pinchtab    18/30         63,658          18,258ms        3,143,057
 | task | probes | veil | pinchtab | predicted | called? |
 |---|---|---|---|---|---|
 | `fact` | search tier, no browser needed | 2/2 · 4,724 | 2/2 · 26,244 | win | no — even ⚠ |
-| `read` | read tier, fetch + extract | **4/5** · 63,955 | 1/5 · 146,432 | win | **yes** |
+| `read` | read tier, fetch + extract | **5/5** · 63,955 | 1/5 · 146,432 | win | **yes** |
 | `form` | fill three fields, submit | **2/2** · 8,862 | 0/2 · 246,053 | even | no — win |
 | `spa` | content only after JS runs | **5/5** · 5,821 | 4/5 · 45,976 | even | no — win |
 | `submit` | search box with no submit button | 5/5 · 12,422 | 5/5 · 63,640 | even | **yes** |
@@ -95,7 +95,7 @@ controls.
 - **`fact` and `read` are weak discriminators** — Mistral already knows those answers.
   The fixture tasks are the trustworthy ones: `ORD-34l`, `6193`, `8432` cannot be
   guessed, so passing them proves the tool did the work.
-- **2–5 runs per cell** after the re-runs. Thin. The success gap (20/31 vs 18/30) is
+- **2–5 runs per cell** after the re-runs. Thin. The success gap (21/31 vs 18/30) is
   inside the noise and should not be read as a capability difference. The **cost** gap
   is 4× and consistent, and is the only headline worth defending.
 - **PinchTab's `form` burns 246k tokens and fails 0/2, with zero allowlist blocks.** That
@@ -109,6 +109,11 @@ them quietly.
 
 - Claimed "`fact`, `read` and `mixed` are tilted by my setup." **Too broad.** Measured
   per-task, only `fact` was still blocked after the allowlist fix.
+- Scored Veil's `read` at 4/5. **Wrong — it is 5/5.** The checker demanded the literal
+  phrase "server error" and one correct answer said "the server *failed* to fulfill a
+  valid request". A false negative, and it fell against Veil. The checker now accepts
+  server error / failed / side / 5xx. PinchTab's four `read` failures returned EMPTY
+  answers and are genuine.
 - Claimed a trailing dot in the blocked-domain list was "the smoking gun" for a broken
   FQDN match. **Wrong** — the dot was the end of the error sentence
   (`…not in allowlist: www.nasa.gov. To allow it, run:`) and the author's regex swallowed
